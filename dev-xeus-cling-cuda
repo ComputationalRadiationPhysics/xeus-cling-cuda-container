@@ -1,0 +1,318 @@
+Bootstrap: docker
+From: nvidia/cuda:8.0-devel-ubuntu16.04
+
+%help
+	This container contains a Ubuntu 16.04 environment with a CUDA 8 SDK. It use a docker container developed by Nvidia as template: https://hub.docker.com/r/nvidia/cuda/
+	
+	- installed via apt
+		- vim
+		- nano
+		- python 3
+		- wget
+		- git
+		- pkg-config
+		- uuid-dev
+	- installed applications
+		- cmake 3.12 (from source)
+	- installed libraries
+		- libzmq v4.2.5
+		- cppzmq v4.3.0
+		- cryptopp 5.6.5
+		- nlohmann JSON v3.3.0
+		- xtl 0.4.0
+		- xeus 0.15.0
+		- pugixml v1.8.1
+		- cxxopts v2.1.1
+	- applications in a external folder
+		- Miniconda 3
+		- xeus-cling
+		- cling
+
+%setup
+
+%files
+	config.json /opt/config.json
+
+%labels
+	Maintainer Simeon Ehrig
+	Email s.ehrig@hzdr.de
+	Version 1.0
+
+%environment
+	export PATH=$PATH:/usr/local/cuda/bin/:/opt/miniconda3/bin
+	export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64	
+
+%post
+	# This file contains all custom installations, which was installed during the post phase of building the container. It avoids errors caused by double installation, if the container is build again with a changed configuration.
+	if [ ! -f /opt/installed_tools.txt ]; then
+		touch /opt/installed_tools.txt
+	fi
+
+	############################################################################################
+	### install software from package manager
+	############################################################################################
+	apt update
+	apt install -y vim nano python3 wget git pkg-config uuid-dev
+
+	############################################################################################
+	### read config and set environment variables
+	############################################################################################
+	XCC_PROJECT_PATH=$(cat /opt/config.json | python3 -c "import sys, json; print(json.load(sys.stdin)['XCC_PROJECT_PATH'])") 
+	XCC_BUILD_TYPE=$(cat /opt/config.json | python3 -c "import sys, json; print(json.load(sys.stdin)['XCC_BUILD_TYPE'])")
+	XCC_NUM_THREADS=$(cat /opt/config.json | python3 -c "import sys, json; print(json.load(sys.stdin)['XCC_NUM_THREADS'])")
+
+	# remove environment variables from the last build process
+	echo "" > $SINGULARITY_ENVIRONMENT
+	echo "export XCC_PROJECT_PATH=$XCC_PROJECT_PATH" >>$SINGULARITY_ENVIRONMENT
+    echo "export XCC_BUILD_TYPE=$XCC_BUILD_TYPE" >>$SINGULARITY_ENVIRONMENT
+    echo "export XCC_NUM_THREADS=$XCC_NUM_THREADS" >>$SINGULARITY_ENVIRONMENT
+
+    ############################################################################################
+    ### prepare installation from source
+    ############################################################################################
+    mkdir -p /opt/tmp
+    cd /opt/tmp
+
+    ############################################################################################
+    ### install cmake v 3.12
+    ############################################################################################
+	if ! grep -q "cmake_3.12" "/opt/installed_tools.txt"; then
+	    apt remove -y cmake
+		wget https://cmake.org/files/v3.12/cmake-3.12.4.tar.gz
+		tar -xzvf cmake-3.12.4.tar.gz
+	    cd cmake-3.12.4
+	    ./bootstrap
+		make -j$XCC_NUM_THREADS
+		make install -j$XCC_NUM_THREADS
+		ln -s /usr/local/bin/cmake /usr/bin
+		cd ..
+		rm -r cmake-3.12.4 cmake-3.12.4.tar.gz
+		echo "cmake_3.12" >> /opt/installed_tools.txt
+	fi
+
+    # jupyter notebook/lab needs the folder /run/user and singularity doesn't generate one
+    if [ ! -d /run/user ]; then
+    	mkdir /run/user
+    	chmod 777 /run/user
+    fi
+
+    ############################################################################################
+    ### install xeus
+    ############################################################################################
+    if ! grep -q "libzmq" "/opt/installed_tools.txt"; then
+		git clone --depth 1 --branch v4.2.5 https://github.com/zeromq/libzmq.git
+		mkdir libzmq/build 
+		cd libzmq/build
+		cmake -D WITH_PERF_TOOL=OFF -D ZMQ_BUILD_TESTS=OFF -D ENABLE_CPACK=OFF -D CMAKE_BUILD_TYPE=$XCC_BUILD_TYPE ..
+		make -j$XCC_NUM_THREADS
+		make install -j$XCC_NUM_THREADS
+		cd ../..
+		rm -r libzmq
+		echo "libzmq" >> /opt/installed_tools.txt
+	fi
+
+	if ! grep -q "cppzmq" "/opt/installed_tools.txt"; then
+		git clone --depth 1 --branch v4.3.0 https://github.com/zeromq/cppzmq.git
+		mkdir cppzmq/build
+		cd cppzmq/build
+		cmake -D CMAKE_BUILD_TYPE=$XCC_BUILD_TYPE ..
+		make install -j$XCC_NUM_THREADS
+		cd ../..
+		rm -r cppzmq
+		echo "cppzmq" >> /opt/installed_tools.txt
+	fi
+
+	if ! grep -q "cryptopp" "/opt/installed_tools.txt"; then
+		git clone --depth 1 --branch CRYPTOPP_5_6_5 https://github.com/weidai11/cryptopp.git
+		mkdir cryptopp/build
+		cd cryptopp/build
+		cmake -D BUILD_SHARED=OFF -D BUILD_TESTING=OFF -D CMAKE_BUILD_TYPE=$XCC_BUILD_TYPE ..
+		make -j$XCC_NUM_THREADS
+		make install -j$XCC_NUM_THREADS
+		cd ../..
+		rm -r cryptopp
+		echo "cryptopp" >> /opt/installed_tools.txt
+	fi	
+
+	if ! grep -q "nlohmann_json" "/opt/installed_tools.txt"; then
+		git clone --depth 1 --branch v3.3.0 https://github.com/nlohmann/json.git
+		mkdir json/build
+		cd json/build
+		cmake -D CMAKE_BUILD_TYPE=$XCC_BUILD_TYPE ..
+		make install -j$XCC_NUM_THREADS
+		cd ../..
+		rm -r json
+		echo "nlohmann_json" >> /opt/installed_tools.txt
+	fi	
+
+	if ! grep -q "xtl" "/opt/installed_tools.txt"; then
+		git clone --depth 1 --branch 0.4.0 https://github.com/QuantStack/xtl.git
+		mkdir xtl/build
+		cd xtl/build
+		cmake -D CMAKE_BUILD_TYPE=$XCC_BUILD_TYPE ..
+		make install -j$XCC_NUM_THREADS
+	    cd ../..
+	    rm -r xtl
+	    echo "xtl" >> /opt/installed_tools.txt
+	fi	
+
+	if ! grep -q "xeus" "/opt/installed_tools.txt"; then
+		git clone --depth 1 --branch 0.15.0 https://github.com/QuantStack/xeus.git
+		mkdir xeus/build
+		cd xeus/build
+		cmake -D BUILD_EXAMPLES=OFF -D CMAKE_BUILD_TYPE=$XCC_BUILD_TYPE ..
+		make -j$XCC_NUM_THREADS
+		make install -j$XCC_NUM_THREADS
+		cd ../..
+		rm -r xeus
+		echo "xeus" >> /opt/installed_tools.txt
+	fi	
+
+    ############################################################################################
+    ### install xeus-cling depencies
+    ############################################################################################
+    if ! grep -q "pugixml" "/opt/installed_tools.txt"; then
+		git clone --depth 1 --branch v1.8.1 https://github.com/zeux/pugixml.git
+		mkdir pugixml/build
+		cd pugixml/build
+		cmake -D CMAKE_BUILD_TYPE=$XCC_BUILD_TYPE ..
+		make install -j$XCC_NUM_THREADS
+		cd ../..
+		rm -r pugixml
+		echo "pugixml" >> /opt/installed_tools.txt
+	fi	
+
+	if ! grep -q "cxxopts" "/opt/installed_tools.txt"; then
+		git clone --depth 1 --branch v2.1.1 https://github.com/jarro2783/cxxopts.git
+		mkdir cxxopts/build
+		cd cxxopts/build
+		cmake -D CMAKE_BUILD_TYPE=$XCC_BUILD_TYPE ..
+		make install -j$XCC_NUM_THREADS
+		cd ../..
+		rm -r cxxopts
+		echo "cxxopts" >> /opt/installed_tools.txt
+	fi
+
+	# the link is necessary, to add the miniconda3/bin folder to PATH
+	ln -fs $XCC_PROJECT_PATH/miniconda3/ /opt/miniconda3
+
+	rm -r /opt/tmp
+	
+%runscript
+	# run all user-space install scripts
+	sh $SCIF_APPRUN_install_miniconda3
+	sh $SCIF_APPRUN_build_cling
+	sh $SCIF_APPRUN_build_xeus_cling
+
+%apphelp install_miniconda3
+	This script install miniconda3 in your project directory.
+
+%apprun install_miniconda3
+	############################################################################################
+    ### install miniconda 3
+    ############################################################################################
+	if [ ! -d $XCC_PROJECT_PATH ]; then
+		mkdir -p $XCC_PROJECT_PATH
+	fi
+
+	if [ -d $XCC_PROJECT_PATH/miniconda3 ]; then
+		echo "ERROR: $XCC_PROJECT_PATH/miniconda3 already exists.\nCheck if Miniconda is already installed."
+		exit 255
+	else
+		cd $XCC_PROJECT_PATH
+	    wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh
+	    chmod u+x Miniconda3-latest-Linux-x86_64.sh
+		./Miniconda3-latest-Linux-x86_64.sh -b -p $XCC_PROJECT_PATH/miniconda3
+		$XCC_PROJECT_PATH/miniconda3/bin/conda install -y jupyter
+	    rm Miniconda3-latest-Linux-x86_64.sh
+	fi
+
+%apphelp
+	Download and build clang from source. If cling already exists, just do "make".
+
+%apprun build_cling
+	if [ ! -d $XCC_PROJECT_PATH ]; then
+		mkdir -p $XCC_PROJECT_PATH
+	fi
+
+	if [ ! -d $XCC_PROJECT_PATH/cling ]; then
+		mkdir -p $XCC_PROJECT_PATH/cling
+		mkdir -p $XCC_PROJECT_PATH/cling/build
+		mkdir -p $XCC_PROJECT_PATH/cling/install
+		mkdir -p $XCC_PROJECT_PATH/cling/release_clang
+		cd $XCC_PROJECT_PATH/cling
+
+		git clone http://root.cern.ch/git/llvm.git src
+		cd src
+		git checkout cling-patches
+		cd tools
+		git clone https://github.com/SimeonEhrig/cling
+		git clone http://root.cern.ch/git/clang.git
+		cd clang
+  		git checkout cling-patches
+  		cd $XCC_PROJECT_PATH/cling/build
+  		cmake ../src/ -DCMAKE_BUILD_TYPE=$XCC_BUILD_TYPE -DBUILD_SHARED_LIBS=OFF -DLLVM_ABI_BREAKING_CHECKS="FORCE_OFF" -DCMAKE_LINKER=/usr/bin/gold -DCMAKE_INSTALL_PREFIX=$XCC_PROJECT_PATH/cling/install -DLLVM_ENABLE_RTTI=ON
+  		make -j$XCC_NUM_THREADS
+  		make install -j$XCC_NUM_THREADS
+
+  		# Compile clang a second time, because the release version of clang is ten times faster than the debug version and using the debug version of clang for cling cuda is horrible slow and seldom necessary.
+  		cd $XCC_PROJECT_PATH/cling/release_clang
+  		cmake ../src/ -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DLLVM_ABI_BREAKING_CHECKS="FORCE_OFF" -DCMAKE_LINKER=/usr/bin/gold -DLLVM_ENABLE_RTTI=ON
+  		make clang -j$XCC_NUM_THREADS
+	else
+		cd $XCC_PROJECT_PATH/cling/build
+		make -j$XCC_NUM_THREADS
+  		make install -j$XCC_NUM_THREADS
+	fi
+
+%apphelp
+	Install xeus-cling from source. If Miniconda is not installed, the installation cancels. If xeus-cling already exists, just do "make".
+
+%apprun build_xeus-cling
+	if [ ! -d $XCC_PROJECT_PATH ]; then
+		mkdir -p $XCC_PROJECT_PATH
+	fi
+
+	if [ ! -d $XCC_PROJECT_PATH/miniconda3 ]; then
+		echo "ERROR: Miniconda not found. Please install miniconda."
+		exit 255
+	fi
+
+	if [ ! -d $XCC_PROJECT_PATH/cling ]; then
+		echo "ERROR: Cling not found. Please install Cling."
+		exit 255
+	fi
+
+	PATH=$PATH:$XCC_PROJECT_PATH/cling/install/bin
+	LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$XCC_PROJECT_PATH/cling/install/lib
+
+	if [ ! -d $XCC_PROJECT_PATH/xeus-cling ]; then
+		# check if folder with xeus-cling cuda kernel definitions exists
+		XCC_KERNEL_PATH=$PWD/jupyter_kernels
+		if [ ! -d $XCC_KERNEL_PATH ]; then
+			echo "Error: Can not find folder jupyter_kernels, which contains the kernel definitions for xeus-cling-cuda.\nPlease run singularity in the same folder as the jupyter_kernels folder or set the path to the jupyter_kernels folder with: singularity run --app build_xeus-cling --pwd /path/to/jupyter_kernels image.sing"
+			exit 255
+		fi
+
+		cd $XCC_PROJECT_PATH
+		git clone --branch 0.4.8 https://github.com/QuantStack/xeus-cling.git
+		mkdir xeus-cling/build
+		cd xeus-cling/build
+		cmake -DCMAKE_INSTALL_PREFIX=$XCC_PROJECT_PATH/miniconda3/ -DCMAKE_INSTALL_LIBDIR=$XCC_PROJECT_PATH/miniconda3/lib -DCMAKE_BUILD_TYPE=$XCC_BUILD_TYPE -DCMAKE_CXX_FLAGS="-I $XCC_PROJECT_PATH/cling/install/include" -DCMAKE_LINKER=/usr/bin/gold ..
+		make -j$XCC_NUM_THREADS
+  		make install -j$XCC_NUM_THREADS
+  		# workaround for a bug in cling-cuda
+  		ln -fs $XCC_PROJECT_PATH/cling/release_clang/bin/clang++ $XCC_PROJECT_PATH/miniconda3/bin
+
+  		# specialize the xeus-cling cuda configurations depending of your build configuration and install they afterwards
+  		for std in 11 14 17
+  		do
+  			sed -e "s|<xeusClingPath>|${XCC_PROJECT_PATH}/miniconda3/bin/xeus-cling|" $XCC_KERNEL_PATH/xeus-cling-cpp${std}-cuda/kernel.json.in > $XCC_KERNEL_PATH/xeus-cling-cpp${std}-cuda/kernel.json
+  			jupyter-kernelspec install --user $XCC_KERNEL_PATH/xeus-cling-cpp${std}-cuda
+  		done
+
+	else
+		cd $XCC_PROJECT_PATH/xeus-cling/build
+		make -j$XCC_NUM_THREADS
+  		make install -j$XCC_NUM_THREADS
+	fi

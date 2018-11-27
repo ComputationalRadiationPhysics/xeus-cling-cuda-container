@@ -1,0 +1,11 @@
+{
+  "display_name": "C++17-CUDA",
+  "argv": [
+      "<xeusClingPath>",
+      "-f",
+      "{connection_file}",
+      "-std=c++17",
+      "-xcuda"
+  ],
+  "language": "C++17"
+}
