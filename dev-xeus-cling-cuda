@@ -12,6 +12,7 @@ From: nvidia/cuda:8.0-devel-ubuntu16.04
 		- git
 		- pkg-config
 		- uuid-dev
+		- gdb
 	- installed applications
 		- cmake 3.12 (from source)
 	- installed libraries
@@ -52,7 +53,7 @@ From: nvidia/cuda:8.0-devel-ubuntu16.04
 	### install software from package manager
 	############################################################################################
 	apt update
-	apt install -y vim nano python3 wget git pkg-config uuid-dev
+	apt install -y vim nano python3 wget git pkg-config uuid-dev gdb
 
 	############################################################################################
 	### read config and set environment variables
@@ -92,8 +93,8 @@ From: nvidia/cuda:8.0-devel-ubuntu16.04
 
     # jupyter notebook/lab needs the folder /run/user and singularity doesn't generate one
     if [ ! -d /run/user ]; then
-    	mkdir /run/user
-    	chmod 777 /run/user
+	mkdir /run/user
+	chmod 777 /run/user
     fi
 
     ############################################################################################
@@ -224,6 +225,7 @@ From: nvidia/cuda:8.0-devel-ubuntu16.04
 	    chmod u+x Miniconda3-latest-Linux-x86_64.sh
 		./Miniconda3-latest-Linux-x86_64.sh -b -p $XCC_PROJECT_PATH/miniconda3
 		$XCC_PROJECT_PATH/miniconda3/bin/conda install -y jupyter
+		$XCC_PROJECT_PATH/miniconda3/bin/conda install -y -c conda-forge jupyterlab
 	    rm Miniconda3-latest-Linux-x86_64.sh
 	fi
 
