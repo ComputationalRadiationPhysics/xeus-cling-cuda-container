@@ -1,0 +1,80 @@
+Bootstrap: localimage
+From: ../dev-xeus-cling-cuda.sing                   
+
+%help
+        The container extends the dev-xeus-cling-cuda container with the IDE kdevelop.
+
+%setup
+
+%files
+	kdev_config.json /opt/kdev_config.json
+
+%labels
+        Maintainer Simeon Ehrig
+        Email simeonehrig@web.de
+        Version 1.0
+
+%environment
+	export PATH=$PATH:/opt/KDevelop_5.3
+
+%post
+	# This file contains all custom installations, which was installed during the post phase of building the container. It avoids errors caused by double installation, if the container is build again with a changed configuration.
+	if [ ! -f /opt/installed_tools.txt ]; then
+		touch /opt/installed_tools.txt
+	fi
+
+	############################################################################################
+	### install software from package manager
+	############################################################################################
+	apt update
+	apt install -y qt5-default xterm
+
+	############################################################################################
+	### read config and set environment variables
+	############################################################################################
+	XCC_USER_ID=$(cat /opt/kdev_config.json | python3 -c "import sys, json; print(json.load(sys.stdin)['XCC_USER_ID'])")
+
+	if ! grep -q "export XCC_USER_ID=$XCC_USER_ID" "$SINGULARITY_ENVIRONMENT"; then
+		echo "export XCC_USER_ID=$XCC_USER_ID" >>$SINGULARITY_ENVIRONMENT
+	fi
+
+	# kdevelop needs this folder to bind the graphical output with the host  
+	if [ ! -d /run/user/$XCC_USER_ID ]; then
+		mkdir /run/user/$XCC_USER_ID
+	fi
+
+	############################################################################################
+	### install gdb 8.2
+	############################################################################################
+	if ! grep -q "gdb82" "/opt/installed_tools.txt"; then
+		apt purge -y gdb
+		apt install -y texinfo checkinstall
+		cd /opt
+		wget http://ftp.gnu.org/gnu/gdb/gdb-8.2.tar.xz
+		tar -xf gdb-8.2.tar.xz
+		cd gdb-8.2
+		./configure
+		make -j
+		#cd gdb
+		make -j install
+		cd /opt
+		rm -r gdb-8.2 gdb-8.2.tar.xz
+		echo "gdb82" >> /opt/installed_tools.txt
+	fi
+
+	############################################################################################
+	### install KDevelop 5.3
+	############################################################################################
+	if ! grep -q "kdevelop53" "/opt/installed_tools.txt"; then
+		cd /opt
+		wget -O KDevelop.AppImage https://download.kde.org/stable/kdevelop/5.3.0/bin/linux/KDevelop-5.3.0-x86_64.AppImage
+		chmod u+x KDevelop.AppImage
+		./KDevelop.AppImage --appimage-extract
+		mv squashfs-root/ KDevelop_5.3/
+		ln -s /opt/KDevelop_5.3/AppRun /opt/KDevelop_5.3/kdevelop
+		chmod -R 707  /opt/KDevelop_5.3
+		rm /opt/KDevelop.AppImage
+		echo "kdevelop53" >> /opt/installed_tools.txt
+	fi	
+
+%runscript
