@@ -1,7 +1,8 @@
 # files and folders created by default values
 builds/
 config.json
-dev-xeus-cling-cuda.sing
+*.sing
+*.img
 jupyter_kernels/xeus-cling-cpp11-cuda/kernel.json
 jupyter_kernels/xeus-cling-cpp14-cuda/kernel.json
 jupyter_kernels/xeus-cling-cpp17-cuda/kernel.json
