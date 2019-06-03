@@ -13,6 +13,7 @@ From: nvidia/cuda:8.0-devel-ubuntu16.04
 		- pkg-config
 		- uuid-dev
 		- gdb
+		- localse-all
 	- installed applications
 		- cmake 3.12 (from source)
 	- installed libraries
@@ -53,7 +54,13 @@ From: nvidia/cuda:8.0-devel-ubuntu16.04
 	### install software from package manager
 	############################################################################################
 	apt update
-	apt install -y vim nano python3 wget git pkg-config uuid-dev gdb
+	apt install -y vim nano python3 wget git pkg-config uuid-dev gdb locales locales-all
+
+	############################################################################################
+	### configure locales (otherwise error at test Prompt/ValuePrinter/Strings.C)
+	############################################################################################
+	locale-gen en_US.UTF-8
+	update-locale LANG=en_US.UTF-8
 
 	############################################################################################
 	### read config and set environment variables
