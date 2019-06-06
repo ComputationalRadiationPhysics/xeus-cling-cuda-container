@@ -1,0 +1,31 @@
+Bootstrap: localimage
+From: ../dev-xeus-cling-cuda.sing                   
+
+%help
+        The container extends the dev-xeus-cling-cuda container by Python 2.7 to run 'make cling-test'.
+	The test environment is in an additional container because Python 2.7 may cause some problems with the Jupyter kernel.
+
+%setup
+
+%files
+
+%labels
+        Maintainer Simeon Ehrig
+        Email s.ehrig@hzdr.de
+        Version 1.0
+
+%environment
+
+%post
+	# This file contains all custom installations, which was installed during the post phase of building the container. It avoids errors caused by double installation, if the container is build again with a changed configuration.
+	if [ ! -f /opt/installed_tools.txt ]; then
+		touch /opt/installed_tools.txt
+	fi
+
+	############################################################################################
+	### install software from package manager
+	############################################################################################
+	apt update
+	apt install -y python2.7
+
+%runscript
