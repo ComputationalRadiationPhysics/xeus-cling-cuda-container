@@ -5,7 +5,8 @@
       "-f",
       "{connection_file}",
       "-std=c++17",
-      "-xcuda"
+      "-xcuda",
+      "<includeXeusClingXmine>"
   ],
   "language": "C++17"
 }

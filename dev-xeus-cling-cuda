@@ -316,7 +316,7 @@ From: nvidia/cuda:8.0-devel-ubuntu16.04
   		# specialize the xeus-cling cuda configurations depending of your build configuration and install they afterwards
   		for std in 11 14 17
   		do
-  			sed -e "s|<xeusClingPath>|${XCC_PROJECT_PATH}/miniconda3/bin/xeus-cling|" $XCC_KERNEL_PATH/xeus-cling-cpp${std}-cuda/kernel.json.in > $XCC_KERNEL_PATH/xeus-cling-cpp${std}-cuda/kernel.json
+			sed -e "s|<xeusClingPath>|${XCC_PROJECT_PATH}/miniconda3/bin/xeus-cling|" -e "s|<includeXeusClingXmine>|-include${XCC_PROJECT_PATH}/miniconda3/include/xcpp/xmime.hpp|" $XCC_KERNEL_PATH/xeus-cling-cpp${std}-cuda/kernel.json.in > $XCC_KERNEL_PATH/xeus-cling-cpp${std}-cuda/kernel.json
   			jupyter-kernelspec install --user $XCC_KERNEL_PATH/xeus-cling-cpp${std}-cuda
   		done
 
