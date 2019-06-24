@@ -15,18 +15,26 @@ from hpccm.building_blocks.packages import packages
 from hpccm.building_blocks.cmake import cmake
 from hpccm.templates.git import git
 from hpccm.templates.CMakeBuild import CMakeBuild
+from hpccm.templates.rm import rm
 
-def git_and_CMake(name: str, url: str, branch: str, threads: int, opts=[]) -> [str]:
+def git_and_CMake(name: str, build_dir: str, url: str, branch: str, threads: int,
+                  remove_list : [str] , opts=[]) -> [str]:
     """Combines git clone, cmake and cmake traget='install'
 
     :param name: name of the project
     :type name: str
+    :param build_dir: path where source code is cloned and built
+    :type build_dir: str
     :param url: git clone url
     :type url: str
     :param branch: branch or version (git clone --branch)
     :type branch: str
     :param threads: number of threads for make -j (None for make -j$(nproc))
     :type threads: int
+    :param remove_list: the list contains folders and files, which will be
+                        removed
+                        if None, no item will be removed
+    :type remove_list: [str]
     :param opts: a list of CMAKE arguments (e.g. -DCMAKE_BUILD_TYPE=RELEASE)
     :type opts: [str]
     :returns: list of bash commands for git and cmake
@@ -36,13 +44,18 @@ def git_and_CMake(name: str, url: str, branch: str, threads: int, opts=[]) -> [s
     # commands
     cm = []
     git_conf = git()
-    cm.append(git_conf.clone_step(repository=url, branch=branch, path='/tmp/', directory=name))
+    cm.append(git_conf.clone_step(repository=url, branch=branch, path=build_dir, directory=name))
     cmake_conf = CMakeBuild()
-    cm.append(cmake_conf.configure_step(build_directory='/tmp/'+name+'_build',
-                                        directory='/tmp/'+name,
+    cm_build_dir = build_dir+'/'+name+'_build'
+    cm_source_dir = build_dir+'/'+name
+    cm.append(cmake_conf.configure_step(build_directory=cm_build_dir,
+                                        directory=cm_source_dir,
                                         opts=opts)
               )
     cm.append(cmake_conf.build_step(parallel=threads, target='install'))
+    if type(remove_list) is list:
+        remove_list.append(cm_build_dir)
+        remove_list.append(cm_source_dir)
     return cm
 
 def gen_jupyter_kernel(cxx_std : int) -> str:
@@ -89,6 +102,14 @@ def main():
     parser.add_argument('--run_command', type=str,
                         choices=['docker', 'singularity'],
                         help='print the run command for the container')
+    parser.add_argument('--build_dir', type=str, default='/tmp',
+                        help='Set source and build path of the libraries and projects (default: /tmp).'
+                        'Run --help_build_dir to get more information.')
+    parser.add_argument('--keep_build', action='store_true',
+                        help='keep source and build files after installation')
+    parser.add_argument('--help_build_dir', action='store_true',
+                        help='get information about build process')
+
     args = parser.parse_args()
 
     # parse number of build threads
@@ -101,6 +122,12 @@ def main():
         number=None
 
     build_type = args.b
+    build_dir = args.build_dir
+    if args.keep_build:
+        # list of folders and files removed in the last step
+        remove_list = None
+    else:
+        remove_list = []
 
     ##################################################################
     ### print help for building and running docker and singularity
@@ -119,6 +146,22 @@ def main():
         else:
             print('docker run --runtime=nvidia -p 8888:8888 --network="host" --rm -it hpccm_cling_cuda:dev')
         sys.exit()
+
+    ##################################################################
+    ### print help for build
+    ##################################################################
+
+    if args.help_build_dir:
+        print('Docker: There are no automatic mounts at build time.')
+        print('        To "cache" builds, you have to bind folders manual.')
+        print('        See Singularity')
+        print('Singularity: The folders /tmp and $HOME from the host are automatically mounted at build time')
+        print('        This can be used to cache builds. But it also can cause problems. To avoid problems,')
+        print('        you should delete the source and build folders after building the container.')
+        print('        If you you want to keep the build inside the container, you should choose an unbound')
+        print('        path. For example /opt')
+        sys.exit()
+
 
     ##################################################################
     ### set container basics
@@ -145,22 +188,22 @@ def main():
     git_llvm = git()
     cbc.append(git_llvm.clone_step(repository='http://root.cern.ch/git/llvm.git',
                                    branch='cling-patches',
-                                   path='/tmp/cling_src', directory='llvm')
+                                   path=build_dir+'/cling_src', directory='llvm')
     )
     git_clang = git()
     cbc.append(git_clang.clone_step(repository='http://root.cern.ch/git/clang.git',
                                     branch='cling-patches',
-                                    path='/tmp/cling_src/llvm/tools')
+                                    path=build_dir+'/cling_src/llvm/tools')
     )
     git_cling = git()
     cbc.append(git_cling.clone_step(repository='https://github.com/SimeonEhrig/cling.git',
                                     branch='test_release',
-                                    path='/tmp/cling_src/llvm/tools')
+                                    path=build_dir+'/cling_src/llvm/tools')
     )
 
     cm_cling = CMakeBuild()
-    cbc.append(cm_cling.configure_step(build_directory='/tmp/cling_build',
-                                 directory='/tmp/cling_src/llvm',
+    cbc.append(cm_cling.configure_step(build_directory=build_dir+'/cling_build',
+                                 directory=build_dir+'/cling_src/llvm',
                                  opts=[
                                      '-DCMAKE_BUILD_TYPE='+build_type,
                                      '-DLLVM_ABI_BREAKING_CHECKS="FORCE_OFF"',
@@ -171,6 +214,10 @@ def main():
     )
     cbc.append(cm_cling.build_step(parallel=number, target='install'))
 
+    if type(remove_list) is list:
+        remove_list.append(build_dir+'/cling_build')
+        remove_list.append(build_dir+'/cling_src')
+
     Stage0 +=shell(commands=cbc)
 
     ##################################################################
@@ -178,47 +225,59 @@ def main():
     ##################################################################
     xeus_build = []
     xeus_build += git_and_CMake(name='libzmq',
-                                    url='https://github.com/zeromq/libzmq.git',
-                                    branch='v4.2.5',
-                                    opts=['-DWITH_PERF_TOOL=OFF',
-                                          '-DZMQ_BUILD_TESTS=OFF',
-                                          '-DENABLE_CPACK=OFF',
-                                          '-DCMAKE_BUILD_TYPE='+build_type
-                                          ],
-                                    threads=number)
+                                build_dir=build_dir,
+                                url='https://github.com/zeromq/libzmq.git',
+                                branch='v4.2.5',
+                                opts=['-DWITH_PERF_TOOL=OFF',
+                                      '-DZMQ_BUILD_TESTS=OFF',
+                                      '-DENABLE_CPACK=OFF',
+                                      '-DCMAKE_BUILD_TYPE='+build_type
+                                ],
+                                threads=number,
+                                remove_list=remove_list)
     xeus_build += git_and_CMake(name='cppzmq',
-                                    url='https://github.com/zeromq/cppzmq.git',
-                                    branch='v4.3.0',
-                                    opts=['-DCMAKE_BUILD_TYPE='+build_type
-                                          ],
-                                    threads=number)
+                                build_dir=build_dir,
+                                url='https://github.com/zeromq/cppzmq.git',
+                                branch='v4.3.0',
+                                opts=['-DCMAKE_BUILD_TYPE='+build_type
+                                ],
+                                threads=number,
+                                remove_list=remove_list)
     xeus_build += git_and_CMake(name='cryptopp',
-                                    url='https://github.com/weidai11/cryptopp.git',
-                                    branch='CRYPTOPP_5_6_5',
-                                    opts=['-DBUILD_SHARED=OFF',
-                                          '-DBUILD_TESTING=OFF',
-                                          '-DCMAKE_BUILD_TYPE='+build_type
-                                          ],
-                                    threads=number)
+                                build_dir=build_dir,
+                                url='https://github.com/weidai11/cryptopp.git',
+                                branch='CRYPTOPP_5_6_5',
+                                opts=['-DBUILD_SHARED=OFF',
+                                      '-DBUILD_TESTING=OFF',
+                                      '-DCMAKE_BUILD_TYPE='+build_type
+                                ],
+                                threads=number,
+                                remove_list=remove_list)
     xeus_build += git_and_CMake(name='nlohmann_json',
-                                    url='https://github.com/nlohmann/json.git',
-                                    branch='v3.3.0',
-                                    opts=['-DCMAKE_BUILD_TYPE='+build_type
-                                          ],
-                                    threads=number)
+                                build_dir=build_dir,
+                                url='https://github.com/nlohmann/json.git',
+                                branch='v3.3.0',
+                                opts=['-DCMAKE_BUILD_TYPE='+build_type
+                                ],
+                                threads=number,
+                                remove_list=remove_list)
     xeus_build += git_and_CMake(name='xtl',
-                                    url='https://github.com/QuantStack/xtl.git',
-                                    branch='0.4.0',
-                                    opts=['-DCMAKE_BUILD_TYPE='+build_type
-                                          ],
-                                    threads=number)
+                                build_dir=build_dir,
+                                url='https://github.com/QuantStack/xtl.git',
+                                branch='0.4.0',
+                                opts=['-DCMAKE_BUILD_TYPE='+build_type
+                                ],
+                                threads=number,
+                                remove_list=remove_list)
     xeus_build += git_and_CMake(name='xeus',
-                                    url='https://github.com/QuantStack/xeus.git',
-                                    branch='0.15.0',
-                                    opts=['-DBUILD_EXAMPLES=OFF',
-                                          '-DCMAKE_BUILD_TYPE='+build_type
-                                          ],
-                                    threads=number)
+                                build_dir=build_dir,
+                                url='https://github.com/QuantStack/xeus.git',
+                                branch='0.15.0',
+                                opts=['-DBUILD_EXAMPLES=OFF',
+                                      '-DCMAKE_BUILD_TYPE='+build_type
+                                ],
+                                threads=number,
+                                remove_list=remove_list)
     Stage0 +=shell(commands=xeus_build)
 
     ##################################################################
@@ -228,7 +287,7 @@ def main():
         Stage0 +=shell(commands=['mkdir -p /run/user', 'chmod 777 /run/user'])
 
     # install Miniconda 3, Jupyter Notebook and Jupyter Lab
-    Stage0 +=shell(commands=['cd /tmp',
+    Stage0 +=shell(commands=['cd '+build_dir,
                              'wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh',
                              'chmod u+x Miniconda3-latest-Linux-x86_64.sh',
                              './Miniconda3-latest-Linux-x86_64.sh -b -p /opt/miniconda3',
@@ -238,30 +297,38 @@ def main():
                              'cd -'
                              ]
                    )
+    if type(remove_list) is list:
+        remove_list.append(build_dir+'/Miniconda3-latest-Linux-x86_64.sh')
     Stage0 += environment(variables={'PATH': '$PATH:/opt/miniconda3/bin/'})
 
     xeus_cling_build = []
     xeus_cling_build += git_and_CMake(name='pugixml',
-                                    url='https://github.com/zeux/pugixml.git',
-                                    branch='v1.8.1',
-                                    opts=['-DCMAKE_BUILD_TYPE='+build_type
-                                          ],
-                                    threads=number)
+                                      build_dir=build_dir,
+                                      url='https://github.com/zeux/pugixml.git',
+                                      branch='v1.8.1',
+                                      opts=['-DCMAKE_BUILD_TYPE='+build_type
+                                      ],
+                                      threads=number,
+                                      remove_list=remove_list)
     xeus_cling_build += git_and_CMake(name='cxxopts',
-                                    url='https://github.com/jarro2783/cxxopts.git',
-                                    branch='v2.1.1',
-                                    opts=['-DCMAKE_BUILD_TYPE='+build_type
-                                          ],
-                                    threads=number)
+                                      build_dir=build_dir,
+                                      url='https://github.com/jarro2783/cxxopts.git',
+                                      branch='v2.1.1',
+                                      opts=['-DCMAKE_BUILD_TYPE='+build_type
+                                      ],
+                                      threads=number,
+                                      remove_list=remove_list)
     xeus_cling_build += git_and_CMake(name='xeus-cling',
-                                    url='https://github.com/QuantStack/xeus-cling.git',
-                                    branch='0.4.8',
-                                    opts=['-DCMAKE_INSTALL_PREFIX=/opt/miniconda3/',
-                                          '-DCMAKE_INSTALL_LIBDIR=/opt/miniconda3/lib',
-                                          '-DCMAKE_LINKER=/usr/bin/gold',
-                                          '-DCMAKE_BUILD_TYPE='+build_type
-                                          ],
-                                    threads=number)
+                                      build_dir=build_dir,
+                                      url='https://github.com/QuantStack/xeus-cling.git',
+                                      branch='0.4.8',
+                                      opts=['-DCMAKE_INSTALL_PREFIX=/opt/miniconda3/',
+                                            '-DCMAKE_INSTALL_LIBDIR=/opt/miniconda3/lib',
+                                            '-DCMAKE_LINKER=/usr/bin/gold',
+                                            '-DCMAKE_BUILD_TYPE='+build_type
+                                      ],
+                                      threads=number,
+                                      remove_list=remove_list)
     Stage0 +=shell(commands=xeus_cling_build)
     ##################################################################
     ### register jupyter kernel
@@ -270,13 +337,22 @@ def main():
     # is `cling -xcuda`
     kernel_register = []
     for std in [11, 14, 17]:
-        kernel_path = '/tmp/xeus-cling-cpp'+str(std)+'-cuda'
-        kernel_register.append('mkdir ' + kernel_path)
+        kernel_path = build_dir+'/xeus-cling-cpp'+str(std)+'-cuda'
+        kernel_register.append('mkdir -p ' + kernel_path)
         kernel_register.append("echo '" + gen_jupyter_kernel(std) + "' > "
                                + kernel_path + "/kernel.json")
         kernel_register.append('jupyter-kernelspec install ' + kernel_path)
+        if type(remove_list) is list:
+            remove_list.append(kernel_path)
 
     Stage0 +=shell(commands=kernel_register)
+
+    ##################################################################
+    ### remove files
+    ##################################################################
+    if type(remove_list) is list:
+        r = rm()
+        Stage0 +=shell(commands=[r.cleanup_step(items=remove_list)])
 
     ##################################################################
     ### write to file or stdout
