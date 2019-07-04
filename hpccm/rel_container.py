@@ -16,9 +16,11 @@ from hpccm.building_blocks.cmake import cmake
 from hpccm.templates.git import git
 from hpccm.templates.CMakeBuild import CMakeBuild
 from hpccm.templates.rm import rm
+from hpccm.templates.wget import wget
+from hpccm.templates.tar import tar
 
 def git_and_CMake(name: str, build_dir: str, url: str, branch: str, threads: int,
-                  remove_list : [str] , opts=[]) -> [str]:
+                  remove_list: [str] , opts=[]) -> [str]:
     """Combines git clone, cmake and cmake traget='install'
 
     :param name: name of the project
@@ -58,6 +60,41 @@ def git_and_CMake(name: str, build_dir: str, url: str, branch: str, threads: int
         remove_list.append(cm_source_dir)
     return cm
 
+def build_openssl(name: str, build_dir: str, threads: int, remove_list: [str]) -> [str]:
+    """install openssl
+
+    :param name: name of the version (e.g. openssl-1.1.1c)
+                 should be sliced from the official URL
+    :type name: str
+    :param build_dir: path where source code is stored and built
+    :type build_dir: str
+    :param threads: number of threads for make -j (None for make -j$(nproc))
+    :type threads: int
+    :param remove_list: the list contains folders and files, which will be
+                        removed
+                        if None, no item will be removed
+    :type remove_list: [str]
+    :returns: list of bash commands
+    :rtype: [str]
+
+    """
+    cm=[]
+    wget_ssl = wget()
+    tar_ssl = tar()
+    cm.append(wget_ssl.download_step(url='https://www.openssl.org/source/'+name+'.tar.gz',
+                                     directory=build_dir))
+    cm.append(tar_ssl.untar_step(tarball=build_dir+'/'+name+'.tar.gz', directory=build_dir))
+    cm.append('cd '+build_dir+'/'+name)
+    cm.append('./config')
+    cm.append('make -j'+str(threads))
+    cm.append('make install -j'+str(threads))
+    cm.append('cd -')
+    if type(remove_list) is list:
+        remove_list.append(build_dir+'/'+name)
+        remove_list.append(build_dir+'/'+name+'.tar.gz')
+
+    return cm
+
 def gen_jupyter_kernel(cxx_std : int) -> str:
     """Generate jupyter kernel description files with cuda support for different
        C++ standards
@@ -71,11 +108,10 @@ def gen_jupyter_kernel(cxx_std : int) -> str:
     return json.dumps({
                       "display_name" : "C++"+str(cxx_std)+"-CUDA",
                       "argv": [
-                          "/opt/miniconda3/bin/xeus-cling",
+                          "/opt/miniconda3/bin/xcpp",
                           "-f",
                           "{connection_file}",
                           "-std=c++"+str(cxx_std),
-                          "-include/opt/miniconda3/include/xcpp/xmime.hpp",
                           "-xcuda"
                       ],
                       "language": "C++"+str(cxx_std)
@@ -243,14 +279,8 @@ def main():
                                 ],
                                 threads=number,
                                 remove_list=remove_list)
-    xeus_build += git_and_CMake(name='cryptopp',
+    xeus_build += build_openssl(name='openssl-1.1.1c',
                                 build_dir=build_dir,
-                                url='https://github.com/weidai11/cryptopp.git',
-                                branch='CRYPTOPP_5_6_5',
-                                opts=['-DBUILD_SHARED=OFF',
-                                      '-DBUILD_TESTING=OFF',
-                                      '-DCMAKE_BUILD_TYPE='+build_type
-                                ],
                                 threads=number,
                                 remove_list=remove_list)
     xeus_build += git_and_CMake(name='nlohmann_json',
@@ -264,7 +294,7 @@ def main():
     xeus_build += git_and_CMake(name='xtl',
                                 build_dir=build_dir,
                                 url='https://github.com/QuantStack/xtl.git',
-                                branch='0.4.0',
+                                branch='0.6.5',
                                 opts=['-DCMAKE_BUILD_TYPE='+build_type
                                 ],
                                 threads=number,
@@ -272,8 +302,9 @@ def main():
     xeus_build += git_and_CMake(name='xeus',
                                 build_dir=build_dir,
                                 url='https://github.com/QuantStack/xeus.git',
-                                branch='0.15.0',
+                                branch='0.20.0',
                                 opts=['-DBUILD_EXAMPLES=OFF',
+                                      '-DDISABLE_ARCH_NATIVE=ON',
                                       '-DCMAKE_BUILD_TYPE='+build_type
                                 ],
                                 threads=number,
@@ -306,7 +337,8 @@ def main():
                                       build_dir=build_dir,
                                       url='https://github.com/zeux/pugixml.git',
                                       branch='v1.8.1',
-                                      opts=['-DCMAKE_BUILD_TYPE='+build_type
+                                      opts=['-DCMAKE_BUILD_TYPE='+build_type,
+                                            '-DCMAKE_POSITION_INDEPENDENT_CODE=ON'
                                       ],
                                       threads=number,
                                       remove_list=remove_list)
@@ -321,11 +353,12 @@ def main():
     xeus_cling_build += git_and_CMake(name='xeus-cling',
                                       build_dir=build_dir,
                                       url='https://github.com/QuantStack/xeus-cling.git',
-                                      branch='0.4.8',
+                                      branch='0.6.0',
                                       opts=['-DCMAKE_INSTALL_PREFIX=/opt/miniconda3/',
                                             '-DCMAKE_INSTALL_LIBDIR=/opt/miniconda3/lib',
                                             '-DCMAKE_LINKER=/usr/bin/gold',
-                                            '-DCMAKE_BUILD_TYPE='+build_type
+                                            '-DCMAKE_BUILD_TYPE='+build_type,
+                                            '-DDISABLE_ARCH_NATIVE=ON'
                                       ],
                                       threads=number,
                                       remove_list=remove_list)
