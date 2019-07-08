@@ -1,13 +1,18 @@
 # Xeus-Cling-Cuda-Container
-The repository contains singularity container descriptions, which allows to build the xeus-cling - cling-cuda stack from source with few commands. 
+The repository contains container recipes to build the entire stack of Xeus-Cling and Cling including cuda extension with just a few commands.
 
 # General Information
-The containers of this repository contain scripts to build a full stack of xeus-cling with the cling 0.6-dev version (has CUDA extension) and jupyter notebook.
+The containers contain Xeus-Cling, Jupyter Notebook and Lab and the latest version of Xeus-Cling-CUDA (https://github.com/SimeonEhrig/cling/tree/test_release).
 
 Various containers are available
 
 - release
+	- recipe is written in Python with [hpccm](https://github.com/NVIDIA/hpc-container-maker)
+	- it can generate recipes for
+		- singularity (official supported)
+		- docker (experimental)
 	- contains a fully integrated xeus-cling-cuda stack built in release mode
+		- singularity need extra flag `--no-home` for full isolation
 - dev
 	- partly integrated into the container
 		- all libraries which should not to changed are integrated in the container
@@ -32,18 +37,16 @@ To build and use the container, your host system needs two prerequisites:
 * **Hint 3:** If you do not have root permission on your system, you can build the container on another system with root permission and copy it to your target system.
 
 ## Release
-The container has no special behavoirs. Simple build it.
+The recipes are written in Python with [hpccm](https://github.com/NVIDIA/hpc-container-maker). No container images are created directly. Instead it creates recipes for singularity and docker. To build a singularity container, follow these steps.
 
 ```bash
+# create recipe
+python rel-container.py -o rel-xeus-cling-cuda
+# build container
 sudo singularity build rel-xeus-cling-cuda.sing rel-xeus-cling-cuda
 ```
-The number of threads can be set via editor in the `rel-xeus-cling-cuda`. Simply add a number in the line:
 
-```
-XCC_NUM_THREADS=
-```
-
-By default, all threads of the system are used.
+Use the `python rel-container.py --help` command to display all possible recipe configuration options. For example, you can set the number of threads with `python rel-container.py -j 4 -o rel-xeus-cling-cuda` (by default, all threads of the system are used).
 
 ## Dev
 The installation of the dev container is divided into three parts, because the modification of the source code of cling and xeus-cling by the user is possible. The three parts are: 
@@ -99,6 +102,7 @@ To start jupyter-lab, you must use the following command.
 
 * **Hint 1:** If you get a CUDA driver error at runtime, you may have forgotten to set the `--nv` flag.
 * **Hint 2:** If you are using a SSH connection, do not forget the [port forwarding](https://help.ubuntu.com/community/SSH/OpenSSH/PortForwarding) for port 8888.
+* **Hint 3:** If you want fully isolation (e.g. because you have problems with other kernel configurations in your home directory) use the `--no-home` argument and manually bind a directory for notebooks via `-B /path/on/host:/path/in/container/`.
 
 # Development
 
