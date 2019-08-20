@@ -10,7 +10,7 @@
 
 import argparse, json, sys
 import hpccm
-from hpccm.primitives import baseimage, shell, environment
+from hpccm.primitives import baseimage, shell, environment, raw
 from hpccm.building_blocks.packages import packages
 from hpccm.building_blocks.cmake import cmake
 from hpccm.templates.git import git
@@ -148,23 +148,6 @@ def main():
 
     args = parser.parse_args()
 
-    # parse number of build threads
-    # if no threads are set, it is set to None which means it is executed with -j
-    if args.j:
-        number = int(args.j)
-        if number < 1:
-            raise ValueError('-j have to be greater than 0')
-    else:
-        number=None
-
-    build_type = args.b
-    build_dir = args.build_dir
-    if args.keep_build:
-        # list of folders and files removed in the last step
-        remove_list = None
-    else:
-        remove_list = []
-
     ##################################################################
     ### print help for building and running docker and singularity
     ### container
@@ -198,11 +181,56 @@ def main():
         print('        path. For example /opt')
         sys.exit()
 
+    # parse number of build threads
+    # if no threads are set, it is set to None which means it is executed with -j
+    if args.j:
+        threads = int(args.j)
+        if threads < 1:
+            raise ValueError('-j have to be greater than 0')
+    else:
+        threads=None
+
+    Stage0 = gen_stage(args.container, args.build_dir, args.b, args.keep_build, threads)
+
+    ##################################################################
+    ### write to file or stdout
+    ##################################################################
+    if args.out:
+        with open(args.out, 'w') as filehandle:
+            filehandle.write(Stage0.__str__())
+    else:
+        print(Stage0)
+
+
+def gen_stage(container : str, build_dir : str, build_type : str, keep_build : bool, threads : int):
+    """Generates the hpccm stage object that contains the description of the
+       base container. Can be extended or translated to a Docker or Singularity
+       Receive.
+
+    :param container: 'docker' or 'singularity'
+    :type container: str
+    :param build_dir: source and build path of the libraries and projects
+    :type build_dir: str
+    :param build_type: set the CMAKE_BUILD_TYPE : 'DEBUG', 'RELEASE', 'RELWITHDEBINFO', 'MINSIZEREL'
+    :type build_type: str
+    :param keep_build: keep source and build files after installation
+    :type keep_build: bool
+    :param threads: number of build threads for make (None for all available threads)
+    :type threads: int
+    :returns: hpccm container stage with the base container
+    :rtype: hpccm.Stage.Stage
+
+    """
+    if keep_build:
+        # list of folders and files removed in the last step
+        remove_list = None
+    else:
+        remove_list = []
 
     ##################################################################
     ### set container basics
     ##################################################################
-    hpccm.config.set_container_format(args.container)
+    hpccm.config.set_container_format(container)
 
     Stage0 = hpccm.Stage();
     Stage0 += baseimage(image='nvidia/cuda:8.0-devel-ubuntu16.04')
@@ -248,7 +276,7 @@ def main():
                                  ]
                                  )
     )
-    cbc.append(cm_cling.build_step(parallel=number, target='install'))
+    cbc.append(cm_cling.build_step(parallel=threads, target='install'))
 
     if type(remove_list) is list:
         remove_list.append(build_dir+'/cling_build')
@@ -269,7 +297,7 @@ def main():
                                       '-DENABLE_CPACK=OFF',
                                       '-DCMAKE_BUILD_TYPE='+build_type
                                 ],
-                                threads=number,
+                                threads=threads,
                                 remove_list=remove_list)
     xeus_build += git_and_CMake(name='cppzmq',
                                 build_dir=build_dir,
@@ -277,11 +305,11 @@ def main():
                                 branch='v4.3.0',
                                 opts=['-DCMAKE_BUILD_TYPE='+build_type
                                 ],
-                                threads=number,
+                                threads=threads,
                                 remove_list=remove_list)
     xeus_build += build_openssl(name='openssl-1.1.1c',
                                 build_dir=build_dir,
-                                threads=number,
+                                threads=threads,
                                 remove_list=remove_list)
     xeus_build += git_and_CMake(name='nlohmann_json',
                                 build_dir=build_dir,
@@ -289,7 +317,7 @@ def main():
                                 branch='v3.3.0',
                                 opts=['-DCMAKE_BUILD_TYPE='+build_type
                                 ],
-                                threads=number,
+                                threads=threads,
                                 remove_list=remove_list)
     xeus_build += git_and_CMake(name='xtl',
                                 build_dir=build_dir,
@@ -297,7 +325,7 @@ def main():
                                 branch='0.6.5',
                                 opts=['-DCMAKE_BUILD_TYPE='+build_type
                                 ],
-                                threads=number,
+                                threads=threads,
                                 remove_list=remove_list)
     xeus_build += git_and_CMake(name='xeus',
                                 build_dir=build_dir,
@@ -307,14 +335,14 @@ def main():
                                       '-DDISABLE_ARCH_NATIVE=ON',
                                       '-DCMAKE_BUILD_TYPE='+build_type
                                 ],
-                                threads=number,
+                                threads=threads,
                                 remove_list=remove_list)
     Stage0 +=shell(commands=xeus_build)
 
     ##################################################################
     ### build and install xeus-cling
     ##################################################################
-    if args.container == 'singularity':
+    if container == 'singularity':
         Stage0 +=shell(commands=['mkdir -p /run/user', 'chmod 777 /run/user'])
 
     # install Miniconda 3, Jupyter Notebook and Jupyter Lab
@@ -340,7 +368,7 @@ def main():
                                       opts=['-DCMAKE_BUILD_TYPE='+build_type,
                                             '-DCMAKE_POSITION_INDEPENDENT_CODE=ON'
                                       ],
-                                      threads=number,
+                                      threads=threads,
                                       remove_list=remove_list)
     xeus_cling_build += git_and_CMake(name='cxxopts',
                                       build_dir=build_dir,
@@ -348,7 +376,7 @@ def main():
                                       branch='v2.1.1',
                                       opts=['-DCMAKE_BUILD_TYPE='+build_type
                                       ],
-                                      threads=number,
+                                      threads=threads,
                                       remove_list=remove_list)
     xeus_cling_build += git_and_CMake(name='xeus-cling',
                                       build_dir=build_dir,
@@ -360,7 +388,7 @@ def main():
                                             '-DCMAKE_BUILD_TYPE='+build_type,
                                             '-DDISABLE_ARCH_NATIVE=ON'
                                       ],
-                                      threads=number,
+                                      threads=threads,
                                       remove_list=remove_list)
     Stage0 +=shell(commands=xeus_cling_build)
     ##################################################################
@@ -387,18 +415,9 @@ def main():
         r = rm()
         Stage0 +=shell(commands=[r.cleanup_step(items=remove_list)])
 
-    ##################################################################
-    ### write to file or stdout
-    ##################################################################
-    if args.out:
-        with open(args.out, 'w') as filehandle:
-            filehandle.write(Stage0.__str__())
-            if args.container == 'docker':
-                filehandle.write("\nEXPOSE 8888")
-    else:
-        print(Stage0)
-        if args.container == 'docker':
-            print("EXPOSE 8888")
+    Stage0 += raw(docker='EXPOSE 8888')
+
+    return Stage0
 
 if __name__ == "__main__":
     main()
