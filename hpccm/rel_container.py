@@ -10,7 +10,7 @@
 
 import argparse, json, sys
 import hpccm
-from hpccm.primitives import baseimage, shell, environment, raw
+from hpccm.primitives import baseimage, shell, environment, raw, copy
 from hpccm.building_blocks.packages import packages
 from hpccm.building_blocks.cmake import cmake
 from hpccm.templates.git import git
@@ -19,7 +19,33 @@ from hpccm.templates.rm import rm
 from hpccm.templates.wget import wget
 from hpccm.templates.tar import tar
 
-def git_and_CMake(name: str, build_dir: str, url: str, branch: str, threads: int,
+def get_git_CMake_entry(name : str, url : str, branch : str, opts=[]) -> {}:
+    """Generator function to generate a entry for the a list.
+
+    The shape is:
+      {'name' : name,
+      'url' : url,
+      'branch' : branch,
+      'opts' : opts}
+
+    :param name: name of the project
+    :type name: str
+    :param url: git clone url
+    :type url: str
+    :param branch: branch or version (git clone --branch)
+    :type branch: str
+    :param opts: a list of CMAKE arguments (e.g. -DCMAKE_BUILD_TYPE=RELEASE)
+    :type opts: [str]
+    :returns: dictionary entry -> see description
+    :rtype: {}
+
+    """
+    return {'name' : name,
+            'url' : url,
+            'branch' : branch,
+            'opts' : opts}
+
+def git_and_CMake(name: str, build_dir: str, install_dir: str, url: str, branch: str, threads: int,
                   remove_list: [str] , opts=[]) -> [str]:
     """Combines git clone, cmake and cmake traget='install'
 
@@ -27,6 +53,8 @@ def git_and_CMake(name: str, build_dir: str, url: str, branch: str, threads: int
     :type name: str
     :param build_dir: path where source code is cloned and built
     :type build_dir: str
+    :param install_dir: CMAKE_INSTALL_PREFIX
+    :type install_dir: str
     :param url: git clone url
     :type url: str
     :param branch: branch or version (git clone --branch)
@@ -47,7 +75,7 @@ def git_and_CMake(name: str, build_dir: str, url: str, branch: str, threads: int
     cm = []
     git_conf = git()
     cm.append(git_conf.clone_step(repository=url, branch=branch, path=build_dir, directory=name))
-    cmake_conf = CMakeBuild()
+    cmake_conf = CMakeBuild(prefix=install_dir)
     cm_build_dir = build_dir+'/'+name+'_build'
     cm_source_dir = build_dir+'/'+name
     cm.append(cmake_conf.configure_step(build_directory=cm_build_dir,
@@ -60,7 +88,7 @@ def git_and_CMake(name: str, build_dir: str, url: str, branch: str, threads: int
         remove_list.append(cm_source_dir)
     return cm
 
-def build_openssl(name: str, build_dir: str, threads: int, remove_list: [str]) -> [str]:
+def build_openssl(name: str, build_dir: str, install_dir: str, threads: int, remove_list: [str]) -> [str]:
     """install openssl
 
     :param name: name of the version (e.g. openssl-1.1.1c)
@@ -68,6 +96,8 @@ def build_openssl(name: str, build_dir: str, threads: int, remove_list: [str]) -
     :type name: str
     :param build_dir: path where source code is stored and built
     :type build_dir: str
+    :param install_dir: CMAKE_INSTAll_PREFIX
+    :type install_dir: str
     :param threads: number of threads for make -j (None for make -j$(nproc))
     :type threads: int
     :param remove_list: the list contains folders and files, which will be
@@ -89,7 +119,7 @@ def build_openssl(name: str, build_dir: str, threads: int, remove_list: [str]) -
                                      directory=build_dir))
     cm.append(tar_ssl.untar_step(tarball=build_dir+'/'+name+'.tar.gz', directory=build_dir))
     cm.append('cd '+build_dir+'/'+name)
-    cm.append('./config')
+    cm.append('./config --prefix=/' + install_dir + ' -Wl,-rpath=/usr/local/lib')
     cm.append('make -j'+make_threads)
     cm.append('make install -j'+make_threads)
     cm.append('cd -')
@@ -127,7 +157,8 @@ def main():
     ### parse args
     ##################################################################
     parser = argparse.ArgumentParser(
-        description='Script to generate a Dockerfile or Singularity receipt for xeus-cling-cuda')
+        description='Script to generate a Dockerfile or Singularity receipt for xeus-cling-cuda',
+        formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('--container', type=str, default='singularity',
                         choices=['docker', 'singularity'],
                         help='generate receipt for docker or singularity (default: singularity)')
@@ -143,10 +174,13 @@ def main():
                         choices=['docker', 'singularity'],
                         help='print the run command for the container')
     parser.add_argument('--build_dir', type=str, default='/tmp',
-                        help='Set source and build path of the libraries and projects (default: /tmp).'
+                        help='Set source and build path of the libraries and projects.\n'
+                        'Only the prefixes /tmp (build outside the container with singularity) and /opt are allowed (default: /tmp).'
                         'Run --help_build_dir to get more information.')
     parser.add_argument('--keep_build', action='store_true',
-                        help='keep source and build files after installation')
+                        help='keep source and build files after installation\n'
+                        'only for singularity supported, because it can store builds in the host memory\n'
+                        'for docker, it is not useful, because the multi-stage build')
     parser.add_argument('--help_build_dir', action='store_true',
                         help='get information about build process')
 
@@ -194,19 +228,29 @@ def main():
     else:
         threads=None
 
-    Stage0 = gen_stage(args.container, args.build_dir, args.b, args.keep_build, threads)
+    # depending on the container software, certain build locations can be difficult
+    build_dir = str(args.build_dir)
+    if (not build_dir.startswith('/tmp')) and (not build_dir.startswith('/opt')):
+        raise ValueError('--build_dir have to start with /tmp or /opt')
+
+    stages = gen_stage(args.container, build_dir, args.build_dir + '/xeus_cling_cuda_install' ,args.b, args.keep_build, threads)
 
     ##################################################################
     ### write to file or stdout
     ##################################################################
+    recipe = []
+    for stage in stages:
+        recipe.append('')
+        recipe.append(stage.__str__())
+
     if args.out:
         with open(args.out, 'w') as filehandle:
-            filehandle.write(Stage0.__str__())
+            filehandle.write('\n'.join(recipe))
     else:
-        print(Stage0)
+        print('\n'.join(recipe))
 
 
-def gen_stage(container : str, build_dir : str, build_type : str, keep_build : bool, threads : int):
+def gen_stage(container : str, build_dir : str, install_dir : str, build_type : str, keep_build : bool, threads : int):
     """Generates the hpccm stage object that contains the description of the
        base container. Can be extended or translated to a Docker or Singularity
        Receive.
@@ -215,6 +259,8 @@ def gen_stage(container : str, build_dir : str, build_type : str, keep_build : b
     :type container: str
     :param build_dir: source and build path of the libraries and projects
     :type build_dir: str
+    :param install_dir: Path where all projects will be installed (often /usr/bin)
+    :type install_dir: str
     :param build_type: set the CMAKE_BUILD_TYPE : 'DEBUG', 'RELEASE', 'RELWITHDEBINFO', 'MINSIZEREL'
     :type build_type: str
     :param keep_build: keep source and build files after installation
@@ -225,22 +271,25 @@ def gen_stage(container : str, build_dir : str, build_type : str, keep_build : b
     :rtype: hpccm.Stage.Stage
 
     """
-    if keep_build:
+    if keep_build and container == 'singularity':
         # list of folders and files removed in the last step
-        remove_list = None
-    else:
         remove_list = []
+    else:
+        remove_list = None
 
     ##################################################################
     ### set container basics
     ##################################################################
     hpccm.config.set_container_format(container)
+    if container == 'singularity':
+        hpccm.config.set_singularity_version('3.3')
 
     Stage0 = hpccm.Stage();
-    Stage0 += baseimage(image='nvidia/cuda:8.0-devel-ubuntu16.04')
+    Stage0 += baseimage(image='nvidia/cuda:8.0-devel-ubuntu16.04', _as='build')
     # LD_LIBRARY_PATH is not taken over correctly when the docker container is converted
     # to a singularity container.
     Stage0 += environment(variables={'LD_LIBRARY_PATH': '$LD_LIBRARY_PATH:/usr/local/cuda/lib64'})
+    Stage0 += environment(variables={'CMAKE_PREFIX_PATH': install_dir})
     Stage0 += packages(ospackages=['git', 'python', 'wget', 'pkg-config', 'uuid-dev', 'gdb',
                                    'locales', 'locales-all' ])
     # set language to en_US.UTF-8 to avoid some problems with the cling output system
@@ -269,7 +318,7 @@ def gen_stage(container : str, build_dir : str, build_type : str, keep_build : b
                                     path=build_dir+'/cling_src/llvm/tools')
     )
 
-    cm_cling = CMakeBuild()
+    cm_cling = CMakeBuild(prefix=install_dir)
     cbc.append(cm_cling.configure_step(build_directory=build_dir+'/cling_build',
                                  directory=build_dir+'/cling_src/llvm',
                                  opts=[
@@ -291,56 +340,56 @@ def gen_stage(container : str, build_dir : str, build_type : str, keep_build : b
     ##################################################################
     ### build and install xeus
     ##################################################################
+    xeus_repo_list = []
+    xeus_repo_list.append(get_git_CMake_entry(name='libzmq',
+                                         url='https://github.com/zeromq/libzmq.git',
+                                         branch='v4.2.5',
+                                         opts=['-DWITH_PERF_TOOL=OFF',
+                                               '-DZMQ_BUILD_TESTS=OFF',
+                                               '-DENABLE_CPACK=OFF',
+                                               '-DCMAKE_BUILD_TYPE='+build_type
+                                         ]))
+    xeus_repo_list.append(get_git_CMake_entry(name='cppzmq',
+                                         url='https://github.com/zeromq/cppzmq.git',
+                                         branch='v4.3.0',
+                                         opts=['-DCMAKE_BUILD_TYPE='+build_type
+                                         ]))
+    xeus_repo_list.append(get_git_CMake_entry(name='nlohmann_json',
+                                         url='https://github.com/nlohmann/json.git',
+                                         branch='v3.3.0',
+                                         opts=['-DCMAKE_BUILD_TYPE='+build_type
+                                         ]))
+    xeus_repo_list.append(get_git_CMake_entry(name='xtl',
+                                         url='https://github.com/QuantStack/xtl.git',
+                                         branch='0.6.5',
+                                         opts=['-DCMAKE_BUILD_TYPE='+build_type
+                                         ]))
+    xeus_repo_list.append(get_git_CMake_entry(name='xeus',
+                                         url='https://github.com/QuantStack/xeus.git',
+                                         branch='0.20.0',
+                                         opts=['-DBUILD_EXAMPLES=OFF',
+                                               '-DDISABLE_ARCH_NATIVE=ON',
+                                               '-DCMAKE_BUILD_TYPE='+build_type
+                                         ]))
+
     xeus_build = []
-    xeus_build += git_and_CMake(name='libzmq',
-                                build_dir=build_dir,
-                                url='https://github.com/zeromq/libzmq.git',
-                                branch='v4.2.5',
-                                opts=['-DWITH_PERF_TOOL=OFF',
-                                      '-DZMQ_BUILD_TESTS=OFF',
-                                      '-DENABLE_CPACK=OFF',
-                                      '-DCMAKE_BUILD_TYPE='+build_type
-                                ],
-                                threads=threads,
-                                remove_list=remove_list)
-    xeus_build += git_and_CMake(name='cppzmq',
-                                build_dir=build_dir,
-                                url='https://github.com/zeromq/cppzmq.git',
-                                branch='v4.3.0',
-                                opts=['-DCMAKE_BUILD_TYPE='+build_type
-                                ],
-                                threads=threads,
-                                remove_list=remove_list)
     xeus_build += build_openssl(name='openssl-1.1.1c',
                                 build_dir=build_dir,
+                                install_dir=install_dir,
                                 threads=threads,
                                 remove_list=remove_list)
-    xeus_build += git_and_CMake(name='nlohmann_json',
-                                build_dir=build_dir,
-                                url='https://github.com/nlohmann/json.git',
-                                branch='v3.3.0',
-                                opts=['-DCMAKE_BUILD_TYPE='+build_type
-                                ],
-                                threads=threads,
-                                remove_list=remove_list)
-    xeus_build += git_and_CMake(name='xtl',
-                                build_dir=build_dir,
-                                url='https://github.com/QuantStack/xtl.git',
-                                branch='0.6.5',
-                                opts=['-DCMAKE_BUILD_TYPE='+build_type
-                                ],
-                                threads=threads,
-                                remove_list=remove_list)
-    xeus_build += git_and_CMake(name='xeus',
-                                build_dir=build_dir,
-                                url='https://github.com/QuantStack/xeus.git',
-                                branch='0.20.0',
-                                opts=['-DBUILD_EXAMPLES=OFF',
-                                      '-DDISABLE_ARCH_NATIVE=ON',
-                                      '-DCMAKE_BUILD_TYPE='+build_type
-                                ],
-                                threads=threads,
-                                remove_list=remove_list)
+    Stage0 += environment(variables={'OPENSSL_ROOT_DIR' : install_dir})
+
+    for entry in xeus_repo_list:
+        xeus_build += git_and_CMake(name=entry['name'],
+                                    build_dir=build_dir,
+                                    install_dir=install_dir,
+                                    url=entry['url'],
+                                    branch=entry['branch'],
+                                    threads=threads,
+                                    remove_list=remove_list,
+                                    opts=entry['opts'])
+
     Stage0 +=shell(commands=xeus_build)
 
     ##################################################################
@@ -364,37 +413,87 @@ def gen_stage(container : str, build_dir : str, build_type : str, keep_build : b
         remove_list.append(build_dir+'/Miniconda3-latest-Linux-x86_64.sh')
     Stage0 += environment(variables={'PATH': '$PATH:/opt/miniconda3/bin/'})
 
+    xeus_cling_repo_list = []
+    xeus_cling_repo_list.append(get_git_CMake_entry(name='pugixml',
+                                                    url='https://github.com/zeux/pugixml.git',
+                                                    branch='v1.8.1',
+                                                    opts=['-DCMAKE_BUILD_TYPE='+build_type,
+                                                          '-DCMAKE_POSITION_INDEPENDENT_CODE=ON'
+                                                    ]))
+    xeus_cling_repo_list.append(get_git_CMake_entry(name='cxxopts',
+                                                    url='https://github.com/jarro2783/cxxopts.git',
+                                                    branch='v2.1.1',
+                                                    opts=['-DCMAKE_BUILD_TYPE='+build_type
+                                                    ]))
+    xeus_cling_repo_list.append(get_git_CMake_entry(name='xeus-cling',
+                                                    url='https://github.com/QuantStack/xeus-cling.git',
+                                                    branch='0.6.0',
+                                                    opts=['-DCMAKE_INSTALL_PREFIX=/opt/miniconda3/',
+                                                          '-DCMAKE_INSTALL_LIBDIR=/opt/miniconda3/lib',
+                                                          '-DCMAKE_LINKER=/usr/bin/gold',
+                                                          '-DCMAKE_BUILD_TYPE='+build_type,
+                                                          '-DDISABLE_ARCH_NATIVE=ON'
+                                                    ]))
+
     xeus_cling_build = []
-    xeus_cling_build += git_and_CMake(name='pugixml',
-                                      build_dir=build_dir,
-                                      url='https://github.com/zeux/pugixml.git',
-                                      branch='v1.8.1',
-                                      opts=['-DCMAKE_BUILD_TYPE='+build_type,
-                                            '-DCMAKE_POSITION_INDEPENDENT_CODE=ON'
-                                      ],
-                                      threads=threads,
-                                      remove_list=remove_list)
-    xeus_cling_build += git_and_CMake(name='cxxopts',
-                                      build_dir=build_dir,
-                                      url='https://github.com/jarro2783/cxxopts.git',
-                                      branch='v2.1.1',
-                                      opts=['-DCMAKE_BUILD_TYPE='+build_type
-                                      ],
-                                      threads=threads,
-                                      remove_list=remove_list)
-    xeus_cling_build += git_and_CMake(name='xeus-cling',
-                                      build_dir=build_dir,
-                                      url='https://github.com/QuantStack/xeus-cling.git',
-                                      branch='0.6.0',
-                                      opts=['-DCMAKE_INSTALL_PREFIX=/opt/miniconda3/',
-                                            '-DCMAKE_INSTALL_LIBDIR=/opt/miniconda3/lib',
-                                            '-DCMAKE_LINKER=/usr/bin/gold',
-                                            '-DCMAKE_BUILD_TYPE='+build_type,
-                                            '-DDISABLE_ARCH_NATIVE=ON'
-                                      ],
-                                      threads=threads,
-                                      remove_list=remove_list)
+    for entry in xeus_cling_repo_list:
+        xeus_cling_build += git_and_CMake(name=entry['name'],
+                                          build_dir=build_dir,
+                                          install_dir=install_dir,
+                                          url=entry['url'],
+                                          branch=entry['branch'],
+                                          threads=threads,
+                                          remove_list=remove_list,
+                                          opts=entry['opts'])
+
     Stage0 +=shell(commands=xeus_cling_build)
+
+    ##################################################################
+    ### create release stage copy application
+    ##################################################################
+    Stage1 = hpccm.Stage()
+    Stage1 += baseimage(image='nvidia/cuda:8.0-devel-ubuntu16.04', _as='release')
+    Stage1 += environment(variables={'LD_LIBRARY_PATH': '$LD_LIBRARY_PATH:/usr/local/cuda/lib64'})
+
+    Stage1 += packages(ospackages=['locales', 'locales-all' ])
+    # set language to en_US.UTF-8 to avoid some problems with the cling output system
+    Stage1 += shell(commands=['locale-gen en_US.UTF-8', 'update-locale LANG=en_US.UTF-8'])
+
+    # the semantic of the copy command is depend on the container software
+    # singularity COPY /opt/foo /opt results to /opt/foo on the target
+    # docker COPY /opt/foo /opt results to /opt on the target
+    if container == 'singularity':
+        if install_dir.startswith('/tmp'):
+            Stage1 += copy(src=install_dir,
+                           dest='/opt/')
+        else:
+            Stage1 += copy(_from='build',
+                           src=install_dir,
+                           dest='/opt/')
+    else:
+        Stage1 += copy(_from='build',
+                       src=install_dir,
+                       dest='/opt/xeus_cling_cuda_install')
+
+    # merge content of install_dir in /usr/local
+    Stage1 += shell(commands=['cp -rl /opt/xeus_cling_cuda_install/* /usr/local/',
+                              'rm -r /opt/xeus_cling_cuda_install/'])
+
+    if container == 'singularity':
+        Stage1 +=shell(commands=['mkdir -p /run/user', 'chmod 777 /run/user'])
+
+    # copy Miniconda 3 with all packages
+    if container == 'singularity':
+        Stage1 += copy(_from='build',
+                       src='/opt/miniconda3',
+                       dest='/opt/')
+    else:
+        Stage1 += copy(_from='build',
+                       src='/opt/miniconda3',
+                       dest='/opt/miniconda3')
+
+    Stage1 += environment(variables={'PATH': '$PATH:/opt/miniconda3/bin/'})
+
     ##################################################################
     ### register jupyter kernel
     ##################################################################
@@ -410,18 +509,18 @@ def gen_stage(container : str, build_dir : str, build_type : str, keep_build : b
         if type(remove_list) is list:
             remove_list.append(kernel_path)
 
-    Stage0 +=shell(commands=kernel_register)
+    Stage1 +=shell(commands=kernel_register)
 
     ##################################################################
     ### remove files
     ##################################################################
     if type(remove_list) is list:
         r = rm()
-        Stage0 +=shell(commands=[r.cleanup_step(items=remove_list)])
+        Stage1 +=shell(commands=[r.cleanup_step(items=remove_list+[install_dir])])
 
-    Stage0 += raw(docker='EXPOSE 8888')
+    Stage1 += raw(docker='EXPOSE 8888')
 
-    return Stage0
+    return [Stage0, Stage1]
 
 if __name__ == "__main__":
     main()
