@@ -49,6 +49,8 @@ From: nvidia/cuda:8.0-devel-ubuntu16.04
 		touch /opt/installed_tools.txt
 	fi
 
+	keep_src_and_build=1
+
 	############################################################################################
 	### install software from package manager
 	############################################################################################
@@ -112,7 +114,9 @@ From: nvidia/cuda:8.0-devel-ubuntu16.04
 	    make -j$XCC_NUM_THREADS
 	    make install -j$XCC_NUM_THREADS
 	    cd ../..
-	    rm -r libzmq
+	    if [ $keep_src_and_build == 0 ]; then
+		rm -r libzmq
+	    fi
 	    echo "libzmq" >> /opt/installed_tools.txt
 	fi
 
@@ -123,7 +127,9 @@ From: nvidia/cuda:8.0-devel-ubuntu16.04
 	    cmake -D CMAKE_BUILD_TYPE=$XCC_BUILD_TYPE ..
 	    make install -j$XCC_NUM_THREADS
 	    cd ../..
-	    rm -r cppzmq
+	    if [ $keep_src_and_build == 0 ]; then
+		rm -r cppzmq
+	    fi
 	    echo "cppzmq" >> /opt/installed_tools.txt
 	fi
 
@@ -134,7 +140,9 @@ From: nvidia/cuda:8.0-devel-ubuntu16.04
 	    cmake -D CMAKE_BUILD_TYPE=$XCC_BUILD_TYPE ..
 	    make install -j$XCC_NUM_THREADS
 	    cd ../..
-	    rm -r json
+	    if [ $keep_src_and_build == 0 ]; then
+		rm -r json
+	    fi
 	    echo "nlohmann_json" >> /opt/installed_tools.txt
 	fi
 
@@ -145,7 +153,9 @@ From: nvidia/cuda:8.0-devel-ubuntu16.04
 	    cmake -D CMAKE_BUILD_TYPE=$XCC_BUILD_TYPE ..
 	    make install -j$XCC_NUM_THREADS
 	    cd ../..
-	    rm -r xtl
+	    if [ $keep_src_and_build == 0 ]; then
+		rm -r xtl
+	    fi
 	    echo "xtl" >> /opt/installed_tools.txt
 	fi
 
@@ -169,7 +179,9 @@ From: nvidia/cuda:8.0-devel-ubuntu16.04
 	    make -j$XCC_NUM_THREADS
 	    make install -j$XCC_NUM_THREADS
 	    cd ../..
-	    rm -r xeus
+	    if [ $keep_src_and_build == 0 ]; then
+		rm -r xeus
+	    fi
 	    echo "xeus" >> /opt/installed_tools.txt
 	fi
 
@@ -183,7 +195,9 @@ From: nvidia/cuda:8.0-devel-ubuntu16.04
 	    cmake -D CMAKE_BUILD_TYPE=$XCC_BUILD_TYPE -D CMAKE_POSITION_INDEPENDENT_CODE=ON ..
 	    make install -j$XCC_NUM_THREADS
 	    cd ../..
-	    rm -r pugixml
+	    if [ $keep_src_and_build == 0 ]; then
+		rm -r pugixml
+	    fi
 	    echo "pugixml" >> /opt/installed_tools.txt
 	fi
 
@@ -194,14 +208,18 @@ From: nvidia/cuda:8.0-devel-ubuntu16.04
 	    cmake -D CMAKE_BUILD_TYPE=$XCC_BUILD_TYPE ..
 	    make install -j$XCC_NUM_THREADS
 	    cd ../..
-	    rm -r cxxopts
+	    if [ $keep_src_and_build == 0 ]; then
+		rm -r cxxopts
+	    fi
 	    echo "cxxopts" >> /opt/installed_tools.txt
 	fi
 
 	# the link is necessary, to add the miniconda3/bin folder to PATH
 	ln -fs $XCC_PROJECT_PATH/miniconda3/ /opt/miniconda3
 
-	rm -r /opt/tmp
+	if [ $keep_src_and_build == 0 ]; then
+	    rm -r /opt/tmp
+	fi
 
 %runscript
 	# run all user-space install scripts
