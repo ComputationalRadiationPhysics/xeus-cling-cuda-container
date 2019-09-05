@@ -241,7 +241,7 @@ def gen_stage(container : str, build_dir : str, build_type : str, keep_build : b
                                    'locales', 'locales-all' ])
     # set language to en_US.UTF-8 to avoid some problems with the cling output system
     Stage0 += shell(commands=['locale-gen en_US.UTF-8', 'update-locale LANG=en_US.UTF-8'])
-    Stage0 += cmake(eula=True)
+    Stage0 += cmake(eula=True, version='3.15.2')
 
     ##################################################################
     ### build and install cling
