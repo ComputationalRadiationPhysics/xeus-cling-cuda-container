@@ -78,6 +78,10 @@ def build_openssl(name: str, build_dir: str, threads: int, remove_list: [str]) -
     :rtype: [str]
 
     """
+    make_threads="$(nproc)"
+    if threads:
+        make_threads = str(threads)
+
     cm=[]
     wget_ssl = wget()
     tar_ssl = tar()
@@ -86,8 +90,8 @@ def build_openssl(name: str, build_dir: str, threads: int, remove_list: [str]) -
     cm.append(tar_ssl.untar_step(tarball=build_dir+'/'+name+'.tar.gz', directory=build_dir))
     cm.append('cd '+build_dir+'/'+name)
     cm.append('./config')
-    cm.append('make -j'+str(threads))
-    cm.append('make install -j'+str(threads))
+    cm.append('make -j'+make_threads)
+    cm.append('make install -j'+make_threads)
     cm.append('cd -')
     if type(remove_list) is list:
         remove_list.append(build_dir+'/'+name)
