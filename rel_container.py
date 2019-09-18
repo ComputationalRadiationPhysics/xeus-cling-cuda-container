@@ -26,6 +26,8 @@ def main():
                         help='generate receipt for docker or singularity (default: singularity)')
     parser.add_argument(
         '-j', type=str, help='number of build threads for make (default: -j)')
+    parser.add_argument(
+        '-l', type=str, help='number of linker threads for the cling build (default: -j)')
     parser.add_argument('-o', '--out', type=str,
                         help='set path of output file (default: stdout)')
     parser.add_argument('--build_command', type=str,
@@ -91,6 +93,13 @@ def main():
     else:
         threads = None
 
+    if args.l:
+        linker_threads = int(args.l)
+        if linker_threads < 1:
+            raise ValueError('-l have to be greater than 0')
+    else:
+        linker_threads = None
+
     # depending on the container software, certain build locations can be difficult
     build_prefix = str(args.build_prefix)
     if (not build_prefix.startswith('/tmp')) and (not build_prefix.startswith('/opt')):
@@ -99,7 +108,8 @@ def main():
     xcc_gen = gn.XCC_gen(container=args.container,
                          build_prefix=build_prefix,
                          keep_build=args.keep_build,
-                         threads=threads)
+                         threads=threads,
+                         linker_threads=linker_threads)
 
     stage = xcc_gen.gen_release_single_stage()
 

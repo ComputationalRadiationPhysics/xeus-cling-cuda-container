@@ -22,6 +22,8 @@ def main():
         formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument(
         '-j', type=str, help='number of build threads for make (default: -j)')
+    parser.add_argument(
+        '-l', type=str, help='number of linker threads for the cling build (default: -j)')
     parser.add_argument('-o', '--out', type=str,
                         help='set path of output file (default: stdout)')
     parser.add_argument('-b',  type=str, default='',
@@ -84,6 +86,13 @@ def main():
     else:
         threads = None
 
+    if args.l:
+        linker_threads = int(args.l)
+        if linker_threads < 1:
+            raise ValueError('-l have to be greater than 0')
+    else:
+        linker_threads = None
+
     # depending on the path, certain build locations can be difficult
     build_prefix = str(args.build_prefix)
     if (not build_prefix.startswith('/tmp')) and (not build_prefix.startswith('/opt')):
@@ -94,7 +103,8 @@ def main():
                          install_prefix='/usr/local',
                          build_type=args.b,
                          keep_build=args.keep_build,
-                         threads=threads)
+                         threads=threads,
+                         linker_threads=linker_threads)
 
     stage = xcc_gen.gen_devel_stage(project_path=os.path.abspath(args.project_path),
                                     cling_build_type_2=(None if args.second_build == '' else args.second_build))

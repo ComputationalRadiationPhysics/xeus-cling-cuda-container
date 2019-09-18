@@ -4,6 +4,7 @@ deprecated/config.json
 *.sing
 *.img
 *.sif
+*.def
 deprecated/jupyter_kernels/xeus-cling-cpp11-cuda/kernel.json
 deprecated/jupyter_kernels/xeus-cling-cpp14-cuda/kernel.json
 deprecated/jupyter_kernels/xeus-cling-cpp17-cuda/kernel.json

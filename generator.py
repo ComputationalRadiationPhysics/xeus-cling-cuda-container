@@ -32,7 +32,7 @@ class XCC_gen:
 
     def __init__(self, container='singularity', build_prefix='/tmp',
                  install_prefix='/usr/local', build_type='RELEASE',
-                 keep_build=False, threads=None):
+                 keep_build=False, threads=None, linker_threads=None):
         """Set up the basic configuration of all projects in the container. There are only a few exceptions in the dev-stage, see gen_devel_stage().
 
         :param container: 'docker' or 'singularity'
@@ -54,6 +54,7 @@ class XCC_gen:
         self.install_prefix = install_prefix
         self.build_type = build_type
         self.threads = threads
+        self.linker_threads = linker_threads
 
         if keep_build:
             self.remove_list = None
@@ -138,7 +139,8 @@ class XCC_gen:
                                        '-DCMAKE_INSTALL_LIBDIR=/opt/miniconda3/lib',
                                        '-DCMAKE_LINKER=/usr/bin/gold',
                                        '-DCMAKE_BUILD_TYPE='+build_type,
-                                       '-DDISABLE_ARCH_NATIVE=ON'
+                                       '-DDISABLE_ARCH_NATIVE=ON',
+                                       '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON'
                                        ])
 
         self.project_list.append({'name': 'jupyter_kernel',
@@ -220,6 +222,7 @@ class XCC_gen:
                                                     install_prefix=cling_install_prefix,
                                                     build_type=self.build_type,
                                                     threads=self.threads,
+                                                    linker_threads=self.linker_threads,
                                                     remove_list=None,
                                                     dual_build=cling_build_type_2)
         # add path to llvm-config for the xeus-cling build
@@ -402,7 +405,7 @@ class XCC_gen:
             variables={'CMAKE_PREFIX_PATH': self.install_prefix})
         stage0 += packages(ospackages=['git', 'python', 'wget', 'pkg-config',
                                        'uuid-dev', 'gdb', 'locales',
-                                       'locales-all'])
+                                       'locales-all', 'unzip'])
         # set language to en_US.UTF-8 to avoid some problems with the cling output system
         stage0 += shell(commands=['locale-gen en_US.UTF-8',
                                   'update-locale LANG=en_US.UTF-8'])
@@ -412,6 +415,14 @@ class XCC_gen:
         if self.container == 'singularity':
             stage0 += shell(commands=['mkdir -p /run/user',
                                       'chmod 777 /run/user'])
+
+        # install ninja build system
+        stage0 += shell(commands=['cd /opt',
+                                  'wget https://github.com/ninja-build/ninja/releases/download/v1.9.0/ninja-linux.zip',
+                                  'unzip ninja-linux.zip',
+                                  'mv ninja /usr/local/bin/',
+                                  'rm ninja-linux.zip',
+                                  'cd -'])
 
         return stage0
 
@@ -432,6 +443,7 @@ class XCC_gen:
                         install_prefix=self.install_prefix,
                         build_type=self.build_type,
                         threads=self.threads,
+                        linker_threads=self.linker_threads,
                         remove_list=self.remove_list)[0]
                     )
             elif p['tag'] == 'git_cmake':
@@ -474,7 +486,7 @@ class XCC_gen:
                 raise ValueError('unknown tag: ' + p['tag'])
 
     @staticmethod
-    def build_cling(build_prefix: str, install_prefix: str, build_type: str, threads: int, remove_list=None, dual_build=None) -> Tuple[List[str], List[str]]:
+    def build_cling(build_prefix: str, install_prefix: str, build_type: str, threads=None, linker_threads=None, remove_list=None, dual_build=None) -> Tuple[List[str], List[str]]:
         """Return Cling build instructions.
 
         :param build_prefix: path where source code is cloned and built
@@ -483,8 +495,10 @@ class XCC_gen:
         :type install_prefix: str
         :param build_type: CMAKE_BUILD_TYPE
         :type build_type: str
-        :param threads: number of make threads
+        :param threads: number of ninja compile threads and linker threads, if not set extra
         :type threads: int
+        :param linker_threads: number of ninja linker threads
+        :type linker_threads: int
         :param remove_list: The list contains folders and files, which will be removed. If None, no item will be removed
         :type remove_list: [str]
         :param dual_build: Set a CMAKE_BUILD_TYPE to build cling a second time, e.g. if you want to have a debug and a release build of cling at the same time. The name of the build folder and CMAKE_INSTALL_PREFIX is extended by the CMAKE_BUILD_TYPE.
@@ -493,6 +507,16 @@ class XCC_gen:
         :rtype: [str],[str]
 
         """
+        if threads == None:
+            c_threads = '$(nproc)'
+        else:
+            c_threads = threads
+
+        if linker_threads == None:
+            l_threads = c_threads
+        else:
+            l_threads = linker_threads
+
         cbc = []
         git_llvm = git()
         cbc.append(git_llvm.clone_step(repository='http://root.cern.ch/git/llvm.git',
@@ -526,13 +550,18 @@ class XCC_gen:
             cbc.append(cm_cling.configure_step(build_directory=build['build_dir'],
                                                directory=build_prefix+'/llvm',
                                                opts=[
-                                                   '-DCMAKE_BUILD_TYPE=' +
-                build['build_type'],
+                                                   '-G Ninja',
+                                                   '-DCMAKE_BUILD_TYPE=' + build['build_type'],
                                                    '-DLLVM_ABI_BREAKING_CHECKS="FORCE_OFF"',
                                                    '-DCMAKE_LINKER=/usr/bin/gold',
-                                                   '-DLLVM_ENABLE_RTTI=ON'
+                                                   '-DLLVM_ENABLE_RTTI=ON',
+                                                   "'-DCMAKE_JOB_POOLS:STRING=compile={0};link={1}'".format(c_threads, l_threads),
+                                                   "'-DCMAKE_JOB_POOL_COMPILE:STRING=compile'",
+                                                   "'-DCMAKE_JOB_POOL_LINK:STRING=link'",
+                                                   '-DLLVM_TARGETS_TO_BUILD="host;NVPTX"',
+                                                   '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON'
             ]))
-            cbc.append(cm_cling.build_step(parallel=threads, target='install'))
+            cbc.append(cm_cling.build_step(parallel=None, target='install'))
             cling_install_prefix.append(build['install_dir'])
 
         if type(remove_list) is list:
