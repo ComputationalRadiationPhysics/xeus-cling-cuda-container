@@ -107,7 +107,7 @@ def main():
                          linker_threads=linker_threads)
 
     stage = xcc_gen.gen_devel_stage(project_path=os.path.abspath(args.project_path),
-                                    cling_build_type_2=(None if args.second_build == '' else args.second_build))
+                                    dual_build_type = (None if args.second_build == '' else args.second_build))
 
     ##################################################################
     # write to file or stdout
