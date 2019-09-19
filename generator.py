@@ -21,6 +21,7 @@ import hpccm
 from hpccm.primitives import baseimage, shell, environment, raw, copy, runscript, label
 from hpccm.building_blocks.packages import packages
 from hpccm.building_blocks.cmake import cmake
+from hpccm.building_blocks.llvm import llvm
 from hpccm.templates.git import git
 from hpccm.templates.CMakeBuild import CMakeBuild
 from hpccm.templates.rm import rm
@@ -129,19 +130,13 @@ class XCC_gen:
                                        ])
         self.add_git_cmake_entry(name='cxxopts',
                                  url='https://github.com/jarro2783/cxxopts.git',
-                                 branch='v2.1.1',
+                                 branch='v2.2.0',
                                  opts=['-DCMAKE_BUILD_TYPE='+build_type
                                        ])
-        self.add_git_cmake_entry(name='xeus-cling',
-                                 url='https://github.com/QuantStack/xeus-cling.git',
-                                 branch='0.6.0',
-                                 opts=['-DCMAKE_INSTALL_PREFIX=/opt/miniconda3/',
-                                       '-DCMAKE_INSTALL_LIBDIR=/opt/miniconda3/lib',
-                                       '-DCMAKE_LINKER=/usr/bin/gold',
-                                       '-DCMAKE_BUILD_TYPE='+build_type,
-                                       '-DDISABLE_ARCH_NATIVE=ON',
-                                       '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON'
-                                       ])
+        self.project_list.append({'name' : 'xeus-cling',
+                                  'tag' : 'xeus-cling',
+                                  'url' : 'https://github.com/QuantStack/xeus-cling.git',
+                                  'branch' : '0.6.0'})
 
         self.project_list.append({'name': 'jupyter_kernel',
                                   'tag': 'jupyter_kernel'})
@@ -170,13 +165,13 @@ class XCC_gen:
                                   'branch': branch,
                                   'opts': opts})
 
-    def gen_devel_stage(self, project_path: str, cling_build_type_2=None) -> hpccm.Stage:
+    def gen_devel_stage(self, project_path: str, dual_build_type=None) -> hpccm.Stage:
         """Get a recipe for the development stack. The build process is divided into two parts. The first is building the container. The container contains all software parts that should not be changed during development. The second part contains a runscript that downloads and build the software parts that can be modified, e.g. cling.
 
         :param project_path: Path on the host system on which the modifiable software projects live
         :type project_path: str
-        :param cling_build_type_2: If you want to build cling a second time with different CMake build type. Set the CMake build type, for example RELEASE
-        :type cling_build_type_2: str
+        :param dual_build_type: If you want to build cling and xeus-cling a second time with different CMake build type. Set the CMake build type, for example RELEASE
+        :type dual_build_type: str
         :returns: hpccm Stage
         :rtype: hpccm.Stage
 
@@ -199,6 +194,8 @@ class XCC_gen:
         stage0 += raw(docker='EXPOSE 8888')
 
         cm_runscript = []
+        # set clang 8.0 as compiler
+        cm_runscript += ['export CC=clang-8', 'export CXX=clang++-8']
 
         ##################################################################
         # miniconda
@@ -215,7 +212,7 @@ class XCC_gen:
         # for development it is better to install to project_path/install
         # if the second build is activated, two different installation folders will be created automatically
         cling_install_prefix = project_path
-        if cling_build_type_2 is None:
+        if dual_build_type is None:
             cling_install_prefix += '/install'
 
         cm, cling_install_prefix = self.build_cling(build_prefix=project_path,
@@ -224,40 +221,26 @@ class XCC_gen:
                                                     threads=self.threads,
                                                     linker_threads=self.linker_threads,
                                                     remove_list=None,
-                                                    dual_build=cling_build_type_2)
-        # add path to llvm-config for the xeus-cling build
-        cm.append('export PATH=$PATH:' + cling_install_prefix[0] + '/bin')
+                                                    dual_build=dual_build_type)
         cm_runscript += cm
 
         ##################################################################
         # xeus-cling
         ##################################################################
-        # get the default CMake arguments and modifies them for the build outsite the container
         for p in self.project_list:
             if p['name'] == 'xeus-cling':
-                xc_info = p
-        xc_opts = xc_info['opts'][:]
-        # set path to Miniconda installation
-        for n, o in enumerate(xc_opts):
-            if o.startswith('-DCMAKE_INSTALL_PREFIX='):
-                xc_opts[n] = '-DCMAKE_INSTALL_PREFIX=' + \
-                    project_path + '/miniconda3/'
-            if o.startswith('-DCMAKE_INSTALL_LIBDIR='):
-                xc_opts[n] = '-DCMAKE_INSTALL_LIBDIR=' + \
-                    project_path + '/miniconda3/lib'
-        # add cling include paths
-        xc_opts.append('-DCMAKE_CXX_FLAGS="-I ' +
-                       cling_install_prefix[0] + '/include"')
+                xc = p
 
-        cm_runscript += self.build_git_and_cmake('xeus-cling',
-                                                 build_prefix=project_path,
-                                                 install_prefix=project_path,
-                                                 url=xc_info['url'],
-                                                 branch=xc_info['branch'],
-                                                 threads=self.threads,
-                                                 remove_list=None,
-                                                 opts=xc_opts)
-        # register jupyter kernels
+        cm_runscript += self.build_xeus_cling(build_prefix=project_path,
+                                              build_type=self.build_type,
+                                              url=xc['url'],
+                                              branch=xc['branch'],
+                                              threads=self.threads,
+                                              remove_list=None,
+                                              miniconda_path=project_path+'/miniconda3',
+                                              cling_path=cling_install_prefix,
+                                              second_build=dual_build_type)
+
         cm_runscript += self.build_jupyter_kernel(build_prefix=project_path+'/kernels',
                                                   miniconda_prefix=project_path,
                                                   user_install=True)
@@ -409,6 +392,21 @@ class XCC_gen:
         # set language to en_US.UTF-8 to avoid some problems with the cling output system
         stage0 += shell(commands=['locale-gen en_US.UTF-8',
                                   'update-locale LANG=en_US.UTF-8'])
+
+        # install clang/llvm
+        # add ppa for modern clang/llvm versions
+        stage0 += shell(commands=['wget http://llvm.org/apt/llvm-snapshot.gpg.key',
+	                          'apt-key add llvm-snapshot.gpg.key',
+	                          'rm llvm-snapshot.gpg.key',
+	                          'echo "" >> /etc/apt/sources.list',
+	                          'echo "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" >> /etc/apt/sources.list',
+	                          'echo "deb-src http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" >> /etc/apt/sources.list'])
+
+        stage0 += llvm(version='8')
+        # set clang 8 as compiler for all projects during container build time
+        stage0 += shell(commands=['export CC=clang-8',
+                                  'export CXX=clang++-8'])
+
         stage0 += cmake(eula=True, version='3.15.2')
 
         # the folder is necessary for jupyter lab
@@ -446,6 +444,18 @@ class XCC_gen:
                         linker_threads=self.linker_threads,
                         remove_list=self.remove_list)[0]
                     )
+            elif p['tag'] == 'xeus-cling':
+                if 'xeus-cling' not in exclude_list:
+                    stage += shell(commands=self.build_xeus_cling(
+                        build_prefix=self.build_prefix,
+                        build_type=self.build_type,
+                        url=p['url'],
+                        branch=p['branch'],
+                        threads=self.threads,
+                        remove_list=self.remove_list,
+                        miniconda_path='/opt/miniconda3',
+                        cling_path=self.install_prefix
+                    ))
             elif p['tag'] == 'git_cmake':
                 if p['name'] not in exclude_list:
                     stage += shell(commands=self.build_git_and_cmake(
@@ -567,9 +577,82 @@ class XCC_gen:
         if type(remove_list) is list:
             for build in cm_builds:
                 remove_list.append(build['build_dir'])
-            remove_list.append(build_prefix+'/cling_src')
+            remove_list.append(build_prefix+'/llvm')
 
         return cbc, cling_install_prefix
+
+    @staticmethod
+    def build_xeus_cling(build_prefix: str, build_type: str, url: str, branch: str, threads: int,
+                         remove_list: [str], miniconda_path : str, cling_path : [str], second_build=None) -> [str]:
+        """Return Cling build instructions.
+
+        :param build_prefix: path where source code is cloned and built
+        :type build_prefix: str
+        :param build_type: CMAKE_BUILD_TYPE
+        :type build_type: str
+        :param url: git clone url
+        :type url: str
+        :param branch: branch or version (git clone --branch)
+        :type branch: str
+        :param threads: number of threads for make -j (None for make -j$(nproc))
+        :type threads: int
+        :param remove_list: The list contains folders and files, which will be removed. If None, no item will be removed.
+        :type remove_list: [str]
+        :param miniconda_path: Path to the Miniconda installation. Set it as CMAKE_INSTALL_PREFIX
+        :type miniconda_path: str
+        :param cling_path: Paths to the cling installations. Dual build uses the first path for the first build and the second path for the second build.
+        :type cling_path: [str]
+        :param second_build: Set a CMAKE_BUILD_TYPE to build xeus-cling a second time, e.g. if you want to have a debug and a release build of xeus-cling at the same time. The name of the build folder and CMAKE_INSTALL_PREFIX is extended by the CMAKE_BUILD_TYPE.
+        :type second_build: str
+        :returns:  a list of build instructions
+        :rtype: [str]
+
+        """
+        cm = []
+        git_conf = git()
+        cm.append(git_conf.clone_step(repository=url,
+                                      branch=branch,
+                                      path=build_prefix,
+                                      directory='xeus-cling'))
+
+        # build_directories
+        xeus_cling_builds = []
+
+        if not second_build:
+            xeus_cling_builds.append(build_prefix+'/xeus-cling_build')
+        else:
+            xeus_cling_builds.append(build_prefix+'/xeus-cling_build_' + build_type.lower())
+            xeus_cling_builds.append(build_prefix+'/xeus-cling_build_' + second_build.lower())
+
+        # backup PATH
+        # xeus-cling requires the llvm-config executable file from the cling installation
+        # for dual build different bin paths are necessary
+        cm.append('bPATH=$PATH')
+        # index
+        i = 0
+        for build_dir in xeus_cling_builds:
+            # add path to llvm-config for the xeus-cling build
+            cm.append('PATH=$bPATH:/' + cling_path[i] + '/bin')
+            cmake_conf = CMakeBuild(prefix=miniconda_path)
+            cm.append(cmake_conf.configure_step(build_directory=build_dir,
+                                                     directory=build_prefix+'/xeus-cling',
+                                                          opts=['-DCMAKE_INSTALL_LIBDIR=' + miniconda_path + '/lib',
+                                                                '-DCMAKE_LINKER=/usr/bin/gold',
+                                                                '-DCMAKE_BUILD_TYPE='+build_type,
+                                                                '-DDISABLE_ARCH_NATIVE=ON',
+                                                                '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
+                                                                '-DCMAKE_PREFIX_PATH=' + cling_path[i],
+                                                                '-DCMAKE_CXX_FLAGS="-I ' + cling_path[i] + '/include"'
+                                                          ]))
+            cm.append(cmake_conf.build_step(parallel=threads, target='install'))
+            i += 1
+
+        if type(remove_list) is list:
+            for build_dir in xeus_cling_builds:
+                remove_list.append(build_dir)
+            remove_list.append(build_prefix+'/xeus-cling')
+
+        return cm
 
     @staticmethod
     def build_git_and_cmake(name: str, build_prefix: str, install_prefix: str, url: str, branch: str, threads: int,
