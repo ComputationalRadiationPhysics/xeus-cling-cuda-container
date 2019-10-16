@@ -99,7 +99,7 @@ class XCC_gen:
                                        ])
         self.add_git_cmake_entry(name='nlohmann_json',
                                  url='https://github.com/nlohmann/json.git',
-                                 branch='v3.3.0',
+                                 branch='v3.7.0',
                                  opts=['-DCMAKE_BUILD_TYPE='+build_type
                                        ])
         self.add_git_cmake_entry(name='xtl',
@@ -140,6 +140,18 @@ class XCC_gen:
 
         self.project_list.append({'name': 'jupyter_kernel',
                                   'tag': 'jupyter_kernel'})
+
+        self.add_git_cmake_entry(name='xproperty',
+                                 url='https://github.com/QuantStack/xproperty.git',
+                                 branch='0.8.1',
+                                 opts=['-DCMAKE_BUILD_TYPE='+build_type
+                                       ])
+
+        self.add_git_cmake_entry(name='xwidgets',
+                                 url='https://github.com/QuantStack/xwidgets.git',
+                                 branch='0.18.0',
+                                 opts=['-DCMAKE_BUILD_TYPE='+build_type
+                                       ])
 
     def add_git_cmake_entry(self, name: str, url: str, branch: str, opts=[]):
         """add git-and-cmake entry to self.project_list.
@@ -759,6 +771,8 @@ class XCC_gen:
               install_prefix + '/miniconda3/bin/conda install -y jupyter',
               install_prefix + '/miniconda3/bin/conda install -y -c conda-forge jupyterlab',
               install_prefix + '/miniconda3/bin/conda install -y -c biobuilds libuuid',
+              install_prefix + '/miniconda3/bin/conda install widgetsnbextension -c conda-forge',
+              install_prefix + '/miniconda3/bin/conda labextension install @jupyter-widgets/jupyterlab-manager'
               'cd -'
               ]
 
