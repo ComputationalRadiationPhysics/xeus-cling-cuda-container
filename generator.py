@@ -33,7 +33,8 @@ class XCC_gen:
 
     def __init__(self, container='singularity', build_prefix='/tmp',
                  install_prefix='/usr/local', build_type='RELEASE',
-                 keep_build=False, threads=None, linker_threads=None):
+                 keep_build=False, threads=None, linker_threads=None,
+                 clang_version=8):
         """Set up the basic configuration of all projects in the container. There are only a few exceptions in the dev-stage, see gen_devel_stage().
 
         :param container: 'docker' or 'singularity'
@@ -48,6 +49,10 @@ class XCC_gen:
         :type keep_build: str
         :param threads: number of build threads for make (None for all available threads)
         :type threads: int
+        :param linker_threads: number of linker threads for ninja (if None, same number like threads)
+        :type linker_threads: int
+        :param clang_version: version of the project clang compiler (default: 8 - supported: 8, 9)
+        :type clang_version: int
 
         """
         self.container = container
@@ -62,6 +67,13 @@ class XCC_gen:
         else:
             # list of folders and files removed in the last step
             self.remove_list = []
+
+        supported_clang_version = [8, 9]
+        if clang_version not in supported_clang_version:
+            raise ValueError('Clang version ' + str(clang_version) + ' is not supported\n' +
+                             'Supported versions: ' + ', '.join(map(str, supported_clang_version)))
+        else:
+            self.clang_version = clang_version
 
         self.author = 'Simeon Ehrig'
         self.email = 's.ehrig@hzdr.de'
@@ -206,8 +218,9 @@ class XCC_gen:
         stage0 += raw(docker='EXPOSE 8888')
 
         cm_runscript = []
-        # set clang 8.0 as compiler
-        cm_runscript += ['export CC=clang-8', 'export CXX=clang++-8']
+        # set clang as compiler
+        cm_runscript += ['export CC=clang-' + str(self.clang_version),
+                         'export CXX=clang++-' + str(self.clang_version)]
 
         ##################################################################
         # miniconda
@@ -411,13 +424,13 @@ class XCC_gen:
 	                          'apt-key add llvm-snapshot.gpg.key',
 	                          'rm llvm-snapshot.gpg.key',
 	                          'echo "" >> /etc/apt/sources.list',
-	                          'echo "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" >> /etc/apt/sources.list',
-	                          'echo "deb-src http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" >> /etc/apt/sources.list'])
+	                          'echo "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-' + str(self.clang_version) + ' main" >> /etc/apt/sources.list',
+	                          'echo "deb-src http://apt.llvm.org/xenial/ llvm-toolchain-xenial-' + str(self.clang_version) + ' main" >> /etc/apt/sources.list'])
 
-        stage0 += llvm(version='8')
+        stage0 += llvm(version=str(self.clang_version))
         # set clang 8 as compiler for all projects during container build time
-        stage0 += shell(commands=['export CC=clang-8',
-                                  'export CXX=clang++-8'])
+        stage0 += shell(commands=['export CC=clang-' + str(self.clang_version),
+                                  'export CXX=clang++-' + str(self.clang_version)])
 
         stage0 += cmake(eula=True, version='3.15.2')
 

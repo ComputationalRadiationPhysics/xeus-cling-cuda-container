@@ -46,6 +46,9 @@ def main():
                         'for docker, it is not useful, because the multi-stage build')
     parser.add_argument('--help_build_prefix', action='store_true',
                         help='get information about build process')
+    parser.add_argument('--clang_version', type=int, default=8,
+                        choices=[8, 9],
+                        help='set the version of the clang project compiler (default: 8)')
 
     args = parser.parse_args()
 
@@ -109,7 +112,8 @@ def main():
                          build_prefix=build_prefix,
                          keep_build=args.keep_build,
                          threads=threads,
-                         linker_threads=linker_threads)
+                         linker_threads=linker_threads,
+                         clang_version=args.clang_version)
 
     stage = xcc_gen.gen_release_single_stage()
 
