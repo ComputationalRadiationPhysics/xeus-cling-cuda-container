@@ -34,7 +34,7 @@ class XCC_gen:
     def __init__(self, container='singularity', build_prefix='/tmp',
                  install_prefix='/usr/local', build_type='RELEASE',
                  keep_build=False, threads=None, linker_threads=None,
-                 clang_version=8):
+                 clang_version=8, gen_args=None):
         """Set up the basic configuration of all projects in the container. There are only a few exceptions in the dev-stage, see gen_devel_stage().
 
         :param container: 'docker' or 'singularity'
@@ -53,6 +53,10 @@ class XCC_gen:
         :type linker_threads: int
         :param clang_version: version of the project clang compiler (default: 8 - supported: 8, 9)
         :type clang_version: int
+        :param gen_args: the string will be save in the environment variable XCC_GEN_ARGS
+                         should be used the save the arguments of the generator script
+                         if None, no environment variable is created
+        :type gen_args: str
 
         """
         self.container = container
@@ -74,6 +78,8 @@ class XCC_gen:
                              'Supported versions: ' + ', '.join(map(str, supported_clang_version)))
         else:
             self.clang_version = clang_version
+
+        self.gen_args=gen_args
 
         self.author = 'Simeon Ehrig'
         self.email = 's.ehrig@hzdr.de'
@@ -404,6 +410,10 @@ class XCC_gen:
         stage0 += label(metadata={'XCC Version': str(self.version),
                                   'Author': self.author,
                                   'E-Mail': self.email})
+
+        if self.gen_args:
+            stage0 += environment(
+                variables={'XCC_GEN_ARGS': '"' + self.gen_args + '"'})
 
         # LD_LIBRARY_PATH is not taken over correctly when the docker container
         # is converted to a singularity container.

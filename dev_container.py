@@ -25,7 +25,8 @@ def main():
     parser.add_argument(
         '-l', type=str, help='number of linker threads for the cling build (default: -j)')
     parser.add_argument('-o', '--out', type=str,
-                        help='set path of output file (default: stdout)')
+                        help='set path of output file (default: stdout)\n' +
+                        'if --store_gen_command is set to 1, save file with arguments beside the recipe')
     parser.add_argument('-b',  type=str, default='',
                         choices=['DEBUG', 'RELEASE',
                                  'RELWITHDEBINFO', 'MINSIZEREL'],
@@ -51,6 +52,9 @@ def main():
     parser.add_argument('--clang_version', type=int, default=8,
                         choices=[8, 9],
                         help='set the version of the clang project compiler (default: 8)')
+    parser.add_argument('--store_gen_command', type=int, default=1,
+                        choices=[0, 1],
+                        help='save the command with which the recipe was generated (default: 1)')
 
     args = parser.parse_args()
 
@@ -101,6 +105,14 @@ def main():
     if (not build_prefix.startswith('/tmp')) and (not build_prefix.startswith('/opt')):
         raise ValueError('--build_prefix have to start with /tmp or /opt')
 
+    gen_args=None
+    if args.store_gen_command == 1:
+        gen_args=' '.join(sys.argv)
+        if args.out:
+            with open(os.path.dirname(os.path.abspath(args.out)) + '/'  +
+                      os.path.splitext(os.path.basename(args.out))[0] + '_command.txt', 'w') as filehandle:
+                filehandle.write(gen_args)
+
     xcc_gen = gn.XCC_gen(container='singularity',
                          build_prefix=build_prefix,
                          install_prefix='/usr/local',
@@ -108,7 +120,8 @@ def main():
                          keep_build=args.keep_build,
                          threads=threads,
                          linker_threads=linker_threads,
-                         clang_version=args.clang_version)
+                         clang_version=args.clang_version,
+                         gen_args=gen_args)
 
     stage = xcc_gen.gen_devel_stage(project_path=os.path.abspath(args.project_path),
                                     dual_build_type = (None if args.second_build == '' else args.second_build))
