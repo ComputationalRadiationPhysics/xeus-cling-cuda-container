@@ -272,9 +272,8 @@ class XCC_gen:
                                               cling_path=cling_install_prefix,
                                               second_build=dual_build_type)
 
-        cm_runscript += self.build_jupyter_kernel(build_prefix=project_path+'/kernels',
-                                                  miniconda_prefix=project_path,
-                                                  user_install=True)
+        cm_runscript += self.build_dev_jupyter_kernel(build_prefix=project_path+'/kernels',
+                                                      miniconda_prefix=project_path)
 
         stage0 += runscript(commands=cm_runscript)
         return stage0
@@ -794,8 +793,8 @@ class XCC_gen:
               install_prefix + '/miniconda3/bin/conda install -y jupyter',
               install_prefix + '/miniconda3/bin/conda install -y -c conda-forge jupyterlab',
               install_prefix + '/miniconda3/bin/conda install -y -c biobuilds libuuid',
-              install_prefix + '/miniconda3/bin/conda install widgetsnbextension -c conda-forge',
-              install_prefix + '/miniconda3/bin/conda labextension install @jupyter-widgets/jupyterlab-manager'
+              install_prefix + '/miniconda3/bin/conda install -y widgetsnbextension -c conda-forge',
+              install_prefix + '/miniconda3/bin/conda labextension install -y @jupyter-widgets/jupyterlab-manager'
               'cd -'
               ]
 
@@ -834,6 +833,36 @@ class XCC_gen:
                                    "' > " + kernel_path + "/kernel.json")
             kernel_register.append(
                 'jupyter-kernelspec install ' + user_install_arg + kernel_path)
+            if type(remove_list) is list:
+                remove_list.append(kernel_path)
+
+        return kernel_register
+
+    @staticmethod
+    def build_dev_jupyter_kernel(build_prefix: str, miniconda_prefix: str, remove_list=None) -> [str]:
+        """Returns jupyter kernel and instructions to install it in the miniconda3 folder. For release builds, please use build_jupyter_kernel().
+
+        :param build_prefix: path, where the kernels are stored
+        :type build_prefix: str
+        :param miniconda_prefix: path to the miniconda installation (should contain xcpp executable)
+        :type miniconda_prefix: str
+        :param remove_list: The list contains folders and files, which will be removed. If None, no item will be removed.
+        :type remove_list: [str]
+        :returns: list of bash commands
+        :rtype: [str]
+
+        """
+
+        kernel_register = []
+        kernel_register.append('mkdir -p ' + miniconda_prefix + '/miniconda3/share/jupyter/kernels/')
+
+        for std in [11, 14, 17]:
+            kernel_path = build_prefix+'/xeus-cling-cpp'+str(std)+'-cuda'
+            kernel_register.append('mkdir -p ' + kernel_path)
+            kernel_register.append("echo '" +
+                                   XCC_gen.gen_jupyter_kernel(miniconda_prefix, std) +
+                                   "' > " + kernel_path + "/kernel.json")
+            kernel_register.append('cp -r ' + kernel_path + ' ' + miniconda_prefix + '/miniconda3/share/jupyter/kernels/')
             if type(remove_list) is list:
                 remove_list.append(kernel_path)
 
