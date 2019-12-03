@@ -441,6 +441,10 @@ class XCC_gen:
         stage0 += shell(commands=['export CC=clang-' + str(self.clang_version),
                                   'export CXX=clang++-' + str(self.clang_version)])
 
+        # install clang development tools
+        stage0 += packages(ospackages=['clang-tidy-' + str(self.clang_version),
+                                       'clang-tools-' + str(self.clang_version)])
+
         stage0 += cmake(eula=True, version='3.15.2')
 
         # the folder is necessary for jupyter lab
