@@ -83,7 +83,7 @@ class XCC_gen:
 
         self.author = 'Simeon Ehrig'
         self.email = 's.ehrig@hzdr.de'
-        self.version = 2.0
+        self.version = '2.1'
 
         # the list contains all projects with properties that are built and
         # installed from source code
@@ -798,7 +798,7 @@ class XCC_gen:
               install_prefix + '/miniconda3/bin/conda install -y -c conda-forge jupyterlab',
               install_prefix + '/miniconda3/bin/conda install -y -c biobuilds libuuid',
               install_prefix + '/miniconda3/bin/conda install -y widgetsnbextension -c conda-forge',
-              install_prefix + '/miniconda3/bin/conda labextension install -y @jupyter-widgets/jupyterlab-manager'
+              #install_prefix + '/miniconda3/bin/conda labextension install -y @jupyter-widgets/jupyterlab-manager'
               'cd -'
               ]
 

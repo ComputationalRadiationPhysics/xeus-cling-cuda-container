@@ -1,0 +1,6 @@
+{
+    "build" : {
+	"compile_threads" : 28,
+	"linker_threads" : 14
+    }
+}
