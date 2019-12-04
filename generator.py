@@ -16,7 +16,7 @@ functions to obtain lists of build instructions for the various software parts.
 """
 
 import json
-from typing import Tuple, List, Dict
+from typing import Tuple, List, Dict, Union
 import hpccm
 from hpccm.primitives import baseimage, shell, environment, raw, copy, runscript, label
 from hpccm.building_blocks.packages import packages
@@ -91,7 +91,7 @@ class XCC_gen:
         # * name is a unique identifier
         # * tag describes which build function must be used
         # the order of the list is important for the build steps
-        self.project_list = []
+        self.project_list : List[Dict[str, str]] = []
 
         self.project_list.append({'name': 'cling',
                                   'tag': 'cling'})
@@ -223,7 +223,7 @@ class XCC_gen:
 
         stage0 += raw(docker='EXPOSE 8888')
 
-        cm_runscript = []
+        cm_runscript : List[str] = []
         # set clang as compiler
         cm_runscript += ['export CC=clang-' + str(self.clang_version),
                          'export CXX=clang++-' + str(self.clang_version)]
@@ -242,12 +242,12 @@ class XCC_gen:
         # the default behavior is PREFIX=/usr/local/ -> install to /usr/local/bin ...
         # for development it is better to install to project_path/install
         # if the second build is activated, two different installation folders will be created automatically
-        cling_install_prefix = project_path
+        cling_install_prefix = [project_path]
         if dual_build_type is None:
-            cling_install_prefix += '/install'
+            cling_install_prefix[0] += '/install'
 
         cm, cling_install_prefix = self.build_cling(build_prefix=project_path,
-                                                    install_prefix=cling_install_prefix,
+                                                    install_prefix=cling_install_prefix[0],
                                                     build_type=self.build_type,
                                                     threads=self.threads,
                                                     linker_threads=self.linker_threads,
@@ -297,11 +297,11 @@ class XCC_gen:
 
         return stage0
 
-    def gen_release_multi_stages(self) -> [hpccm.Stage]:
+    def gen_release_multi_stages(self) -> List[hpccm.Stage]:
         """Get a release recipe for the stack. The stack contains two stages. Save a little bit memory on singularity and much on docker, but it is more error prone.
 
         :returns: list of hpccm Stages
-        :rtype: [hpccm.Stage]
+        :rtype: List[hpccm.Stage]
 
         """
         if (not self.install_prefix.startswith('/tmp') and
@@ -565,7 +565,7 @@ class XCC_gen:
         else:
             l_threads = linker_threads
 
-        cbc = []
+        cbc : List[str] = []
         git_llvm = git()
         cbc.append(git_llvm.clone_step(repository='http://root.cern.ch/git/llvm.git',
                                        branch='cling-patches',
@@ -591,7 +591,7 @@ class XCC_gen:
                           'install_dir': install_prefix + '/install_' + dual_build.lower(),
                           'build_type': dual_build.lower()}]
 
-        cling_install_prefix = []
+        cling_install_prefix : List[str] = []
 
         for build in cm_builds:
             cm_cling = CMakeBuild(prefix=build['install_dir'])
@@ -621,7 +621,7 @@ class XCC_gen:
 
     @staticmethod
     def build_xeus_cling(build_prefix: str, build_type: str, url: str, branch: str, threads: int,
-                         remove_list: [str], miniconda_path : str, cling_path : [str], second_build=None) -> [str]:
+                         remove_list: Union[None, List[str]], miniconda_path : str, cling_path : List[str], second_build=None) -> List[str]:
         """Return Cling build instructions.
 
         :param build_prefix: path where source code is cloned and built
@@ -635,15 +635,15 @@ class XCC_gen:
         :param threads: number of threads for make -j (None for make -j$(nproc))
         :type threads: int
         :param remove_list: The list contains folders and files, which will be removed. If None, no item will be removed.
-        :type remove_list: [str]
+        :type remove_list: Union[None, List[str]]
         :param miniconda_path: Path to the Miniconda installation. Set it as CMAKE_INSTALL_PREFIX
         :type miniconda_path: str
         :param cling_path: Paths to the cling installations. Dual build uses the first path for the first build and the second path for the second build.
-        :type cling_path: [str]
+        :type cling_path: List[str]
         :param second_build: Set a CMAKE_BUILD_TYPE to build xeus-cling a second time, e.g. if you want to have a debug and a release build of xeus-cling at the same time. The name of the build folder and CMAKE_INSTALL_PREFIX is extended by the CMAKE_BUILD_TYPE.
         :type second_build: str
         :returns:  a list of build instructions
-        :rtype: [str]
+        :rtype: List[str]
 
         """
         cm = []
@@ -694,7 +694,7 @@ class XCC_gen:
 
     @staticmethod
     def build_git_and_cmake(name: str, build_prefix: str, install_prefix: str, url: str, branch: str, threads: int,
-                            remove_list: [str], opts=[]) -> [str]:
+                            remove_list: Union[None, List[str]], opts=[]) -> List[str]:
         """Combines git clone, cmake and cmake traget='install'
 
         :param name: name of the project
@@ -710,11 +710,11 @@ class XCC_gen:
         :param threads: number of threads for make -j (None for make -j$(nproc))
         :type threads: int
         :param remove_list: The list contains folders and files, which will be removed. If None, no item will be removed.
-        :type remove_list: [str]
+        :type remove_list: Union[None, List[str]]
         :param opts: a list of CMAKE arguments (e.g. -DCMAKE_BUILD_TYPE=RELEASE)
-        :type opts: [str]
+        :type opts: List[str]
         :returns: list of bash commands for git and cmake
-        :rtype: [str]
+        :rtype: List[str]
 
         """
         # commands
@@ -736,7 +736,7 @@ class XCC_gen:
         return cm
 
     @staticmethod
-    def build_openssl(name: str, build_prefix: str, install_prefix: str, threads: int, remove_list: [str]) -> Tuple[List[str], Dict[str, str]]:
+    def build_openssl(name: str, build_prefix: str, install_prefix: str, threads: int, remove_list: Union[None, List[str]]) -> Tuple[List[str], Dict[str, str]]:
         """install openssl
 
         :param name: Name of the version (e.g. openssl-1.1.1c). Should be sliced from the official URL.
@@ -748,9 +748,9 @@ class XCC_gen:
         :param threads: number of threads for make -j (None for make -j$(nproc))
         :type threads: int
         :param remove_list: The list contains folders and files, which will be removed. If None, no item will be removed.
-        :type remove_list: [str]
+        :type remove_list: Union[None, List[str]]
         :returns: list of bash commands and dictionary of environment variables
-        :rtype: [str], {str,str}
+        :rtype: List[str], {str,str}
 
         """
         make_threads = "$(nproc)"
@@ -809,7 +809,7 @@ class XCC_gen:
         return cm, {'PATH': '$PATH:' + install_prefix + '/miniconda3/bin/'}
 
     @staticmethod
-    def build_jupyter_kernel(build_prefix: str, miniconda_prefix: str, user_install=False, remove_list=None) -> [str]:
+    def build_jupyter_kernel(build_prefix: str, miniconda_prefix: str, user_install=False, remove_list=None) -> List[str]:
         """Returns jupyter kernel and instructions to install it
 
         :param build_prefix: path, where the kernels are stored
@@ -821,7 +821,7 @@ class XCC_gen:
         :param remove_list: The list contains folders and files, which will be removed. If None, no item will be removed.
         :type remove_list: [str]
         :returns: list of bash commands
-        :rtype: [str]
+        :rtype: List[str]
 
         """
         user_install_arg = ''
@@ -843,7 +843,7 @@ class XCC_gen:
         return kernel_register
 
     @staticmethod
-    def build_dev_jupyter_kernel(build_prefix: str, miniconda_prefix: str, remove_list=None) -> [str]:
+    def build_dev_jupyter_kernel(build_prefix: str, miniconda_prefix: str, remove_list=None) -> List[str]:
         """Returns jupyter kernel and instructions to install it in the miniconda3 folder. For release builds, please use build_jupyter_kernel().
 
         :param build_prefix: path, where the kernels are stored
@@ -853,7 +853,7 @@ class XCC_gen:
         :param remove_list: The list contains folders and files, which will be removed. If None, no item will be removed.
         :type remove_list: [str]
         :returns: list of bash commands
-        :rtype: [str]
+        :rtype: List[str]
 
         """
 
