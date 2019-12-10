@@ -83,7 +83,7 @@ class XCC_gen:
 
         self.author = 'Simeon Ehrig'
         self.email = 's.ehrig@hzdr.de'
-        self.version = '2.1'
+        self.version = '2.2'
 
         # the list contains all projects with properties that are built and
         # installed from source code
@@ -126,12 +126,12 @@ class XCC_gen:
                                        ])
         self.add_git_cmake_entry(name='xtl',
                                  url='https://github.com/QuantStack/xtl.git',
-                                 branch='0.6.5',
+                                 branch='0.6.9',
                                  opts=['-DCMAKE_BUILD_TYPE='+build_type
                                        ])
         self.add_git_cmake_entry(name='xeus',
                                  url='https://github.com/QuantStack/xeus.git',
-                                 branch='0.20.0',
+                                 branch='0.23.3',
                                  opts=['-DBUILD_EXAMPLES=OFF',
                                        '-DDISABLE_ARCH_NATIVE=ON',
                                        '-DCMAKE_BUILD_TYPE='+build_type
@@ -158,7 +158,7 @@ class XCC_gen:
         self.project_list.append({'name' : 'xeus-cling',
                                   'tag' : 'xeus-cling',
                                   'url' : 'https://github.com/QuantStack/xeus-cling.git',
-                                  'branch' : '0.6.0'})
+                                  'branch' : '0.8.0'})
 
         self.project_list.append({'name': 'jupyter_kernel',
                                   'tag': 'jupyter_kernel'})
@@ -171,7 +171,7 @@ class XCC_gen:
 
         self.add_git_cmake_entry(name='xwidgets',
                                  url='https://github.com/QuantStack/xwidgets.git',
-                                 branch='0.18.0',
+                                 branch='0.19.0',
                                  opts=['-DCMAKE_BUILD_TYPE='+build_type
                                        ])
 
@@ -259,7 +259,8 @@ class XCC_gen:
                                                     threads=self.threads,
                                                     linker_threads=self.linker_threads,
                                                     remove_list=None,
-                                                    dual_build=dual_build_type)
+                                                    dual_build=dual_build_type,
+                                                    git_cling_opts=[''])
         cm_runscript += cm
 
         ##################################################################
@@ -547,7 +548,7 @@ class XCC_gen:
     def build_cling(build_prefix: str, install_prefix: str, build_type: str,
                     cling_url: str, cling_branch=None, cling_hash=None,
                     threads=None, linker_threads=None, remove_list=None,
-                    dual_build=None) -> Tuple[List[str], List[str]]:
+                    dual_build=None, git_cling_opts=['--depth=1']) -> Tuple[List[str], List[str]]:
         """Return Cling build instructions.
 
         :param build_prefix: path where source code is cloned and built
@@ -570,6 +571,8 @@ class XCC_gen:
         :type remove_list: [str]
         :param dual_build: Set a CMAKE_BUILD_TYPE to build cling a second time, e.g. if you want to have a debug and a release build of cling at the same time. The name of the build folder and CMAKE_INSTALL_PREFIX is extended by the CMAKE_BUILD_TYPE.
         :type dual_build: str
+        :param git_cling_opts: Setting options for Git Clone
+        :type git_cling_opts: [str]
         :returns: a list of build instructions and a list of the install folders
         :rtype: [str],[str]
 
@@ -593,7 +596,7 @@ class XCC_gen:
         cbc.append(git_clang.clone_step(repository='http://root.cern.ch/git/clang.git',
                                         branch='cling-patches',
                                         path=build_prefix+'/llvm/tools'))
-        git_cling = git()
+        git_cling = git(opts=git_cling_opts)
         cbc.append(git_cling.clone_step(repository=cling_url,
                                         branch=cling_branch,
                                         commit=cling_hash,
