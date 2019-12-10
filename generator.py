@@ -93,6 +93,10 @@ class XCC_gen:
         # the order of the list is important for the build steps
         self.project_list : List[Dict[str, str]] = []
 
+        self.cling_url = 'https://github.com/root-project/cling.git'
+        self.cling_branch = None
+        self.cling_hash = '595580b'
+
         self.project_list.append({'name': 'cling',
                                   'tag': 'cling'})
 
@@ -249,6 +253,9 @@ class XCC_gen:
         cm, cling_install_prefix = self.build_cling(build_prefix=project_path,
                                                     install_prefix=cling_install_prefix[0],
                                                     build_type=self.build_type,
+                                                    cling_url=self.cling_url,
+                                                    cling_branch=self.cling_branch,
+                                                    cling_hash=self.cling_hash,
                                                     threads=self.threads,
                                                     linker_threads=self.linker_threads,
                                                     remove_list=None,
@@ -478,6 +485,9 @@ class XCC_gen:
                         build_prefix=self.build_prefix,
                         install_prefix=self.install_prefix,
                         build_type=self.build_type,
+                        cling_url=self.cling_url,
+                        cling_branch=self.cling_branch,
+                        cling_hash=self.cling_hash,
                         threads=self.threads,
                         linker_threads=self.linker_threads,
                         remove_list=self.remove_list)[0]
@@ -534,7 +544,10 @@ class XCC_gen:
                 raise ValueError('unknown tag: ' + p['tag'])
 
     @staticmethod
-    def build_cling(build_prefix: str, install_prefix: str, build_type: str, threads=None, linker_threads=None, remove_list=None, dual_build=None) -> Tuple[List[str], List[str]]:
+    def build_cling(build_prefix: str, install_prefix: str, build_type: str,
+                    cling_url: str, cling_branch=None, cling_hash=None,
+                    threads=None, linker_threads=None, remove_list=None,
+                    dual_build=None) -> Tuple[List[str], List[str]]:
         """Return Cling build instructions.
 
         :param build_prefix: path where source code is cloned and built
@@ -543,6 +556,12 @@ class XCC_gen:
         :type install_prefix: str
         :param build_type: CMAKE_BUILD_TYPE
         :type build_type: str
+        :param cling_url: GitHub url of the Cling repository
+        :type cling_url: str
+        :param cling_branch: GitHub branch of the Cling repository
+        :type cling_branch: str
+        :param cling_hash: GitHub commit hash of the Cling repository
+        :type cling_hash: str
         :param threads: number of ninja compile threads and linker threads, if not set extra
         :type threads: int
         :param linker_threads: number of ninja linker threads
@@ -575,8 +594,9 @@ class XCC_gen:
                                         branch='cling-patches',
                                         path=build_prefix+'/llvm/tools'))
         git_cling = git()
-        cbc.append(git_cling.clone_step(repository='https://github.com/SimeonEhrig/cling.git',
-                                        branch='test_release',
+        cbc.append(git_cling.clone_step(repository=cling_url,
+                                        branch=cling_branch,
+                                        commit=cling_hash,
                                         path=build_prefix+'/llvm/tools'))
         # modify the install folder for dual build
         if not dual_build:

@@ -55,6 +55,12 @@ def main():
     parser.add_argument('--store_gen_command', type=int, default=1,
                         choices=[0, 1],
                         help='save the command with which the recipe was generated (default: 1)')
+    parser.add_argument('--cling_url', type=str,
+                        help='Set custom Cling GitHub url.')
+    parser.add_argument('--cling_branch', type=str,
+                        help='Used only when --cling_url is set. Change the GitHub branch of Cling. Cling GitHub Commit Hash is deleted.')
+    parser.add_argument('--cling_hash', type=str,
+                        help='Used only when --cling_url is set. Change the GitHub Commit of Cling. Cling GitHub branch is deleted.')
 
     args = parser.parse_args()
 
@@ -122,6 +128,15 @@ def main():
                          linker_threads=linker_threads,
                          clang_version=args.clang_version,
                          gen_args=gen_args)
+
+    if args.cling_url:
+        if args.cling_branch is not None and args.cling_hash is not None:
+            print('--cling_branch and --cling_hash cannot be used at the same time')
+            exit(1)
+        else:
+            xcc_gen.cling_url = args.cling_url
+            xcc_gen.cling_branch = args.cling_branch
+            xcc_gen.cling_hash = args.cling_hash
 
     stage = xcc_gen.gen_devel_stage(project_path=os.path.abspath(args.project_path),
                                     dual_build_type = (None if args.second_build == '' else args.second_build))
