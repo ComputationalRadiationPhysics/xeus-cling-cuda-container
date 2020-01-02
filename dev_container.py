@@ -61,6 +61,9 @@ def main():
                         help='Used only when --cling_url is set. Change the GitHub branch of Cling. Cling GitHub Commit Hash is deleted.')
     parser.add_argument('--cling_hash', type=str,
                         help='Used only when --cling_url is set. Change the GitHub Commit of Cling. Cling GitHub branch is deleted.')
+    parser.add_argument('--build_libcxx', action='store_true',
+                        help='Set the flag to build the whole stack with libc++. '
+                        'Also add the libc++ and libc++abi projects to the llvm build.')
 
     args = parser.parse_args()
 
@@ -127,7 +130,8 @@ def main():
                          threads=threads,
                          linker_threads=linker_threads,
                          clang_version=args.clang_version,
-                         gen_args=gen_args)
+                         gen_args=gen_args,
+                         build_libcxx=args.build_libcxx)
 
     if args.cling_url:
         if args.cling_branch is not None and args.cling_hash is not None:

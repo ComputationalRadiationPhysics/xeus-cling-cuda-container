@@ -34,7 +34,7 @@ class XCC_gen:
     def __init__(self, container='singularity', build_prefix='/tmp',
                  install_prefix='/usr/local', build_type='RELEASE',
                  keep_build=False, threads=None, linker_threads=None,
-                 clang_version=8, gen_args=None):
+                 clang_version=8, gen_args=None, build_libcxx=None):
         """Set up the basic configuration of all projects in the container. There are only a few exceptions in the dev-stage, see gen_devel_stage().
 
         :param container: 'docker' or 'singularity'
@@ -57,6 +57,9 @@ class XCC_gen:
                          should be used the save the arguments of the generator script
                          if None, no environment variable is created
         :type gen_args: str
+        :param build_libcxx: Build the whole stack with libc++. Also add the
+                             libc++ and libc++abi projects to the llvm build.
+        :type build_libcxx: bool
 
         """
         self.container = container
@@ -65,6 +68,7 @@ class XCC_gen:
         self.build_type = build_type
         self.threads = threads
         self.linker_threads = linker_threads
+        self.build_libcxx = build_libcxx
 
         if keep_build:
             self.remove_list = None
@@ -175,6 +179,21 @@ class XCC_gen:
                                  opts=['-DCMAKE_BUILD_TYPE='+build_type
                                        ])
 
+    def add_libcxx_cmake_arg(self, inputlist : List[str]) -> List[str]:
+        """If the class attribute build_libcxx is true, add
+        -DCMAKE_CXX_FLAGS="-stdlib=libc++" to cmake flags in inputlist.
+
+        :param inputlist: List of cmake flags
+        :type inputlist: List[str]
+        :returns: inputlist plus -DCMAKE_CXX_FLAGS="-stdlib=libc++" if
+                  self.build_libcxx is true
+        :rtype: List[str]
+
+        """
+        if self.build_libcxx:
+            inputlist.append('-DCMAKE_CXX_FLAGS="-stdlib=libc++"')
+        return inputlist
+
     def add_git_cmake_entry(self, name: str, url: str, branch: str, opts=[]):
         """add git-and-cmake entry to self.project_list.
 
@@ -197,7 +216,7 @@ class XCC_gen:
                                   'tag': 'git_cmake',
                                   'url': url,
                                   'branch': branch,
-                                  'opts': opts})
+                                  'opts': self.add_libcxx_cmake_arg(opts)})
 
     def gen_devel_stage(self, project_path: str, dual_build_type=None) -> hpccm.Stage:
         """Get a recipe for the development stack. The build process is divided into two parts. The first is building the container. The container contains all software parts that should not be changed during development. The second part contains a runscript that downloads and build the software parts that can be modified, e.g. cling.
@@ -260,7 +279,8 @@ class XCC_gen:
                                                     linker_threads=self.linker_threads,
                                                     remove_list=None,
                                                     dual_build=dual_build_type,
-                                                    git_cling_opts=[''])
+                                                    git_cling_opts=[''],
+                                                    build_libcxx=self.build_libcxx)
         cm_runscript += cm
 
         ##################################################################
@@ -278,7 +298,8 @@ class XCC_gen:
                                               remove_list=None,
                                               miniconda_path=project_path+'/miniconda3',
                                               cling_path=cling_install_prefix,
-                                              second_build=dual_build_type)
+                                              second_build=dual_build_type,
+                                              build_libcxx=self.build_libcxx)
 
         cm_runscript += self.build_dev_jupyter_kernel(build_prefix=project_path+'/kernels',
                                                       miniconda_prefix=project_path)
@@ -450,8 +471,16 @@ class XCC_gen:
                                   'export CXX=clang++-' + str(self.clang_version)])
 
         # install clang development tools
-        stage0 += packages(ospackages=['clang-tidy-' + str(self.clang_version),
-                                       'clang-tools-' + str(self.clang_version)])
+        clang_extra = ['clang-tidy-' + str(self.clang_version),
+                       'clang-tools-' + str(self.clang_version)]
+
+        # install libc++ and libc++abi depending of the clang version
+        if self.build_libcxx:
+            clang_extra += ['libc++1-' + str(self.clang_version),
+                            'libc++-' + str(self.clang_version) + '-dev',
+                            'libc++abi1-' + str(self.clang_version),
+                            'libc++abi-' + str(self.clang_version) + '-dev']
+        stage0 += packages(ospackages=clang_extra)
 
         stage0 += cmake(eula=True, version='3.15.2')
 
@@ -491,7 +520,8 @@ class XCC_gen:
                         cling_hash=self.cling_hash,
                         threads=self.threads,
                         linker_threads=self.linker_threads,
-                        remove_list=self.remove_list)[0]
+                        remove_list=self.remove_list,
+                        build_libcxx=self.build_libcxx)[0]
                     )
             elif p['tag'] == 'xeus-cling':
                 if 'xeus-cling' not in exclude_list:
@@ -503,7 +533,8 @@ class XCC_gen:
                         threads=self.threads,
                         remove_list=self.remove_list,
                         miniconda_path='/opt/miniconda3',
-                        cling_path=self.install_prefix
+                        cling_path=self.install_prefix,
+                        build_libcxx=self.build_libcxx
                     ))
             elif p['tag'] == 'git_cmake':
                 if p['name'] not in exclude_list:
@@ -548,7 +579,8 @@ class XCC_gen:
     def build_cling(build_prefix: str, install_prefix: str, build_type: str,
                     cling_url: str, cling_branch=None, cling_hash=None,
                     threads=None, linker_threads=None, remove_list=None,
-                    dual_build=None, git_cling_opts=['--depth=1']) -> Tuple[List[str], List[str]]:
+                    dual_build=None, git_cling_opts=['--depth=1'],
+                    build_libcxx=None) -> Tuple[List[str], List[str]]:
         """Return Cling build instructions.
 
         :param build_prefix: path where source code is cloned and built
@@ -573,6 +605,9 @@ class XCC_gen:
         :type dual_build: str
         :param git_cling_opts: Setting options for Git Clone
         :type git_cling_opts: [str]
+        :param build_libcxx: Build the whole stack with libc++. Also add the
+                             libc++ and libc++abi projects to the llvm build.
+        :type build_libcxx: bool
         :returns: a list of build instructions and a list of the install folders
         :rtype: [str],[str]
 
@@ -601,6 +636,18 @@ class XCC_gen:
                                         branch=cling_branch,
                                         commit=cling_hash,
                                         path=build_prefix+'/llvm/tools'))
+        # add libc++ and libcxxabi to the llvm project
+        # Comaker detect the projects automatically and builds it.
+        if build_libcxx:
+            git_libcxx = git()
+            cbc.append(git_libcxx.clone_step(repository='https://github.com/llvm-mirror/libcxx',
+                                             branch='release_50',
+                                             path=build_prefix+'/llvm/projects'))
+            git_libcxxabi = git()
+            cbc.append(git_libcxx.clone_step(repository='https://github.com/llvm-mirror/libcxxabi',
+                                             branch='release_50',
+                                             path=build_prefix+'/llvm/projects'))
+
         # modify the install folder for dual build
         if not dual_build:
             cm_builds = [{'build_dir': build_prefix+'/cling_build',
@@ -617,21 +664,28 @@ class XCC_gen:
         cling_install_prefix : List[str] = []
 
         for build in cm_builds:
+            cmake_opts = [
+                '-G Ninja',
+                '-DCMAKE_BUILD_TYPE=' + build['build_type'],
+                '-DLLVM_ABI_BREAKING_CHECKS="FORCE_OFF"',
+                '-DCMAKE_LINKER=/usr/bin/gold',
+                '-DLLVM_ENABLE_RTTI=ON',
+                "'-DCMAKE_JOB_POOLS:STRING=compile={0};link={1}'".format(c_threads, l_threads),
+                "'-DCMAKE_JOB_POOL_COMPILE:STRING=compile'",
+                "'-DCMAKE_JOB_POOL_LINK:STRING=link'",
+                '-DLLVM_TARGETS_TO_BUILD="host;NVPTX"',
+                '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON'
+            ]
+
+            # build the project with libc++
+            # the flag is not necessary to enable the build of libc++ and libc++abi
+            if build_libcxx:
+                cmake_opts.append('-DLLVM_ENABLE_LIBCXX=ON')
+
             cm_cling = CMakeBuild(prefix=build['install_dir'])
             cbc.append(cm_cling.configure_step(build_directory=build['build_dir'],
                                                directory=build_prefix+'/llvm',
-                                               opts=[
-                                                   '-G Ninja',
-                                                   '-DCMAKE_BUILD_TYPE=' + build['build_type'],
-                                                   '-DLLVM_ABI_BREAKING_CHECKS="FORCE_OFF"',
-                                                   '-DCMAKE_LINKER=/usr/bin/gold',
-                                                   '-DLLVM_ENABLE_RTTI=ON',
-                                                   "'-DCMAKE_JOB_POOLS:STRING=compile={0};link={1}'".format(c_threads, l_threads),
-                                                   "'-DCMAKE_JOB_POOL_COMPILE:STRING=compile'",
-                                                   "'-DCMAKE_JOB_POOL_LINK:STRING=link'",
-                                                   '-DLLVM_TARGETS_TO_BUILD="host;NVPTX"',
-                                                   '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON'
-            ]))
+                                               opts=cmake_opts))
             cbc.append(cm_cling.build_step(parallel=None, target='install'))
             cling_install_prefix.append(build['install_dir'])
 
@@ -644,7 +698,8 @@ class XCC_gen:
 
     @staticmethod
     def build_xeus_cling(build_prefix: str, build_type: str, url: str, branch: str, threads: int,
-                         remove_list: Union[None, List[str]], miniconda_path : str, cling_path : List[str], second_build=None) -> List[str]:
+                         remove_list: Union[None, List[str]], miniconda_path : str,
+                         cling_path : List[str], second_build=None, build_libcxx=None) -> List[str]:
         """Return Cling build instructions.
 
         :param build_prefix: path where source code is cloned and built
@@ -665,6 +720,8 @@ class XCC_gen:
         :type cling_path: List[str]
         :param second_build: Set a CMAKE_BUILD_TYPE to build xeus-cling a second time, e.g. if you want to have a debug and a release build of xeus-cling at the same time. The name of the build folder and CMAKE_INSTALL_PREFIX is extended by the CMAKE_BUILD_TYPE.
         :type second_build: str
+        :param build_libcxx: Build the whole stack with libc++.
+        :type build_libcxx: bool
         :returns:  a list of build instructions
         :rtype: List[str]
 
@@ -694,17 +751,22 @@ class XCC_gen:
         for build_dir in xeus_cling_builds:
             # add path to llvm-config for the xeus-cling build
             cm.append('PATH=$bPATH:/' + cling_path[i] + '/bin')
+            cmake_opts = ['-DCMAKE_INSTALL_LIBDIR=' + miniconda_path + '/lib',
+                          '-DCMAKE_LINKER=/usr/bin/gold',
+                          '-DCMAKE_BUILD_TYPE='+build_type,
+                          '-DDISABLE_ARCH_NATIVE=ON',
+                          '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
+                          '-DCMAKE_PREFIX_PATH=' + cling_path[i],
+                          '-DCMAKE_CXX_FLAGS="-I ' + cling_path[i] + '/include"'
+            ]
+
+            if build_libcxx:
+                cmake_opts.append('-DCMAKE_CXX_FLAGS="-stdlib=libc++"')
+
             cmake_conf = CMakeBuild(prefix=miniconda_path)
             cm.append(cmake_conf.configure_step(build_directory=build_dir,
-                                                     directory=build_prefix+'/xeus-cling',
-                                                          opts=['-DCMAKE_INSTALL_LIBDIR=' + miniconda_path + '/lib',
-                                                                '-DCMAKE_LINKER=/usr/bin/gold',
-                                                                '-DCMAKE_BUILD_TYPE='+build_type,
-                                                                '-DDISABLE_ARCH_NATIVE=ON',
-                                                                '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
-                                                                '-DCMAKE_PREFIX_PATH=' + cling_path[i],
-                                                                '-DCMAKE_CXX_FLAGS="-I ' + cling_path[i] + '/include"'
-                                                          ]))
+                                                directory=build_prefix+'/xeus-cling',
+                                                opts=cmake_opts))
             cm.append(cmake_conf.build_step(parallel=threads, target='install'))
             i += 1
 
