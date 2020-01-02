@@ -1,4 +1,4 @@
-import sys, json
+import sys, json, os
 import shutil, subprocess
 
 def main():
@@ -14,8 +14,11 @@ def main():
     while answer not in ('y', 'n'):
         answer = input('is version ' + container_version + ' correct? [y/n] : ')
         if answer == 'y':
-            sign_container()
-            push_container(container_version)
+            login_sregistry()
+            sign_container(False)
+            sign_container(True)
+            push_container(container_version, False)
+            push_container(container_version, True)
         if answer == 'n':
             exit(1)
 
@@ -55,11 +58,29 @@ def get_container_version():
 
     return None
 
-def sign_container():
-    """Sign the container with the private key
+def login_sregistry():
+    """Login to the sregistry account
 
     """
-    c_sign = 'singularity sign xeus-cling-cuda-container.sif'
+    # login to the remote server
+    c_login = 'singularity remote login --tokenfile ' + str(os.getenv("HOME")) + '/.singularity/sylabs-token'
+    p_login = subprocess.Popen(c_login.split())
+    output, error = p_login.communicate()
+
+    if error is not None:
+        print('could not run: ' + c_login)
+        exit(1)
+
+
+def sign_container(libcxx : bool):
+    """Sign the container with the private key
+
+    :param libcxx: sign the libc++ container version
+    :type libcxx: bool
+
+    """
+    image_name = 'xeus-cling-cuda-container-cxx.sif' if libcxx else 'xeus-cling-cuda-container.sif'
+    c_sign = 'singularity sign ' + image_name
     p_sign = subprocess.Popen(c_sign.split())
     output, error = p_sign.communicate()
 
@@ -68,24 +89,20 @@ def sign_container():
         exit(1)
 
 
-def push_container(version : str):
-    """Login to the remote server and upload the image
+def push_container(version : str, libcxx : bool):
+    """upload the image
 
     :param version: is used for the tag
     :type version: str
+    :param libcxx: push the libc++ container version
+    :type libcxx: bool
 
     """
-    # login to the remote server
-    c_login = 'singularity remote login --tokenfile ~/.singularity/sylabs-token'
-    p_login = subprocess.Popen(c_login.split())
-    output, error = p_login.communicate()
-
-    if error is not None:
-        print('could not run: ' + c_login)
-        exit(1)
+    image_name = 'xeus-cling-cuda-container-cxx.sif' if libcxx else 'xeus-cling-cuda-container.sif'
+    library_name = 'xeus-cling-cuda-cxx:' if libcxx else 'xeus-cling-cuda:'
 
     # upload the container
-    c_push = 'singularity push xeus-cling-cuda-container.sif library://sehrig/default/xeus-cling-cuda:' + version
+    c_push = 'singularity push ' + image_name + ' library://sehrig/default/' + library_name + version
     p_push = subprocess.Popen(c_push.split())
     output, error = p_push.communicate()
 

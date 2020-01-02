@@ -24,7 +24,8 @@ def main():
     while answer not in ('y', 'n'):
         answer = input('is the config correct? [y/n] : ')
         if answer == 'y':
-            build(config)
+            build(config, False)
+            build(config, True)
         if answer == 'n':
             exit(1)
 
@@ -44,18 +45,30 @@ def check_singularity():
 
     print(output.decode("utf-8"))
 
-def build(config : Dict):
+def build(config : Dict, libcxx : bool):
     """Generate the singularity recipe and build it.
 
     :param config: Json config with number of compile and linker threads
     :type config: Dict
+    :param libcxx: build the container with libc++
+    :type libcxx: bool
 
     """
+    if libcxx:
+        recipe_name = 'recipe_libcxx.def'
+        image_name = 'xeus-cling-cuda-container-cxx.sif'
+        log_name = 'build_libcxx.log'
+    else:
+        recipe_name = 'recipe.def'
+        image_name = 'xeus-cling-cuda-container.sif'
+        log_name = 'build.log'
+
     # generate recipe
     xcc_gen = gn.XCC_gen(build_prefix='/opt',
                          threads=config['compile_threads'],
-                         linker_threads=config['linker_threads'])
-    with open('recipe.def', 'w') as recipe_file:
+                         linker_threads=config['linker_threads'],
+                         build_libcxx=libcxx)
+    with open(recipe_name, 'w') as recipe_file:
         recipe_file.write(xcc_gen.gen_release_single_stage().__str__())
         recipe_file.close()
 
@@ -63,15 +76,15 @@ def build(config : Dict):
     process = subprocess.Popen(['singularity',
                                 'build',
                                 '--fakeroot',
-                                'xeus-cling-cuda-container.sif',
-                                'recipe.def'],
+                                image_name,
+                                recipe_name],
                                stdout=subprocess.PIPE)
     output, error = process.communicate()
     if error is not None:
-        print('"singularity build --fakeroot xeus-cling-cuda-container.sif recipe.def" failed')
+        print('"singularity build --fakeroot ' + image_name + ' ' + recipe_name  + '" failed')
         exit(1)
 
-    with open('build.log', 'w') as build_log:
+    with open(log_name, 'w') as build_log:
         build_log.write(output.decode('utf-8'))
         build_log.close()
 
