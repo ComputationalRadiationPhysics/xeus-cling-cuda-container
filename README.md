@@ -19,11 +19,13 @@ Various containers are available. All recipes are generated using Python scripts
 
 It is also possible to [install](https://github.com/QuantStack/xeus-cling) xeus-cling via conda. But this installation use cling version 0.5 and does not support CUDA.
 
-# Installation
+# General Requirements
 
 To build and use the container, your host system needs two prerequisites:
 - [Singularity](http://singularity.lbl.gov/) >= 3.3.0
 - Nvidia CUDA Driver, which supports CUDA >= 8.0
+
+# Building Containers
 
 ## General hints
 
@@ -61,6 +63,21 @@ singularity run dev-xeus-cling-cuda.sif
 * **Hint 2:** Depending on the `XCC_BUILD_TYPE` the build may require a lot of storage space. The `Debug` build needs about 82 GB.
 
 Use the `python dev-container.py --help` command to display all possible recipe configuration options.
+
+# Downloading Container from the Registry 
+
+The built release containers are also available in the singularity register:
+
+```bash
+singularity pull library://sehrig/default/xeus-cling-cuda 
+```
+
+or
+
+```bash
+# the stack was built with the LLVM's libc++ and cling used libc++ (solves some problems)
+ singularity pull library://sehrig/default/xeus-cling-cuda-cxx 
+ ```
 
 # Running
 To use the xeus-cling-cuda stack via jupyter notebook use the following command.
