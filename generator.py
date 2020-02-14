@@ -879,11 +879,13 @@ class XCC_gen:
               'wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh',
               'chmod u+x Miniconda3-latest-Linux-x86_64.sh',
               './Miniconda3-latest-Linux-x86_64.sh -b -p ' + install_prefix + '/miniconda3',
+              'export PATH=$PATH:' + install_prefix + '/miniconda3/bin/',
+              install_prefix + '/miniconda3/bin/conda install -y -c conda-forge nodejs',
               install_prefix + '/miniconda3/bin/conda install -y jupyter',
               install_prefix + '/miniconda3/bin/conda install -y -c conda-forge jupyterlab',
               install_prefix + '/miniconda3/bin/conda install -y -c biobuilds libuuid',
               install_prefix + '/miniconda3/bin/conda install -y widgetsnbextension -c conda-forge',
-              #install_prefix + '/miniconda3/bin/conda labextension install -y @jupyter-widgets/jupyterlab-manager'
+              install_prefix + '/miniconda3/bin/jupyter labextension install @jupyter-widgets/jupyterlab-manager',
               'cd -'
               ]
 
