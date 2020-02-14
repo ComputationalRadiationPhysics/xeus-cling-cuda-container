@@ -1,6 +1,7 @@
 import json, sys, os
 import shutil, subprocess
 from typing import Dict
+import recipe as rc
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import generator as gn
@@ -24,8 +25,10 @@ def main():
     while answer not in ('y', 'n'):
         answer = input('is the config correct? [y/n] : ')
         if answer == 'y':
-            build(config, False)
-            build(config, True)
+            rc.create(config, False)
+            build(False)
+            rc.create(config, True)
+            build(True)
         if answer == 'n':
             exit(1)
 
@@ -45,11 +48,8 @@ def check_singularity():
 
     print(output.decode("utf-8"))
 
-def build(config : Dict, libcxx : bool):
+def build(libcxx : bool):
     """Generate the singularity recipe and build it.
-
-    :param config: Json config with number of compile and linker threads
-    :type config: Dict
     :param libcxx: build the container with libc++
     :type libcxx: bool
 
@@ -62,15 +62,6 @@ def build(config : Dict, libcxx : bool):
         recipe_name = 'recipe.def'
         image_name = 'xeus-cling-cuda-container.sif'
         log_name = 'build.log'
-
-    # generate recipe
-    xcc_gen = gn.XCC_gen(build_prefix='/opt',
-                         threads=config['compile_threads'],
-                         linker_threads=config['linker_threads'],
-                         build_libcxx=libcxx)
-    with open(recipe_name, 'w') as recipe_file:
-        recipe_file.write(xcc_gen.gen_release_single_stage().__str__())
-        recipe_file.close()
 
     # build image
     process = subprocess.Popen(['singularity',

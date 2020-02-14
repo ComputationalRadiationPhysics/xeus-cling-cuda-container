@@ -18,7 +18,9 @@ def main():
             sign_container(False)
             sign_container(True)
             push_container(container_version, False)
+            push_container('latest', False)
             push_container(container_version, True)
+            push_container('latest', True)
         if answer == 'n':
             exit(1)
 
