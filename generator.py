@@ -87,7 +87,7 @@ class XCC_gen:
 
         self.author = 'Simeon Ehrig'
         self.email = 's.ehrig@hzdr.de'
-        self.version = '2.2'
+        self.version = '2.3'
 
         # the list contains all projects with properties that are built and
         # installed from source code
@@ -100,6 +100,11 @@ class XCC_gen:
         self.cling_url = 'https://github.com/root-project/cling.git'
         self.cling_branch = None
         self.cling_hash = '595580b'
+
+        # have to be before building cling, because the cling jupyter kernel
+        # needs pip
+        self.project_list.append({'name': 'miniconda3',
+                                  'tag': 'miniconda'})
 
         self.project_list.append({'name': 'cling',
                                   'tag': 'cling'})
@@ -144,10 +149,6 @@ class XCC_gen:
         #######################################################################
         ### xeus-cling and dependencies
         #######################################################################
-
-        self.project_list.append({'name': 'miniconda3',
-                                  'tag': 'miniconda'})
-
         self.add_git_cmake_entry(name='pugixml',
                                  url='https://github.com/zeux/pugixml.git',
                                  branch='v1.8.1',
@@ -271,6 +272,7 @@ class XCC_gen:
 
         cm, cling_install_prefix = self.build_cling(build_prefix=project_path,
                                                     install_prefix=cling_install_prefix[0],
+                                                    miniconda_prefix=project_path+'/miniconda3',
                                                     build_type=self.build_type,
                                                     cling_url=self.cling_url,
                                                     cling_branch=self.cling_branch,
@@ -397,7 +399,7 @@ class XCC_gen:
 
         stage1 += environment(variables={'PATH': '$PATH:/opt/miniconda3/bin/'})
 
-        stage1 += shell(commands=self.build_jupyter_kernel(
+        stage1 += shell(commands=self.build_rel_jupyter_kernel(
             build_prefix=self.build_prefix,
             miniconda_prefix='/opt',
             remove_list=self.remove_list))
@@ -514,6 +516,7 @@ class XCC_gen:
                     stage += shell(commands=self.build_cling(
                         build_prefix=self.build_prefix,
                         install_prefix=self.install_prefix,
+                        miniconda_prefix='/opt/miniconda3',
                         build_type=self.build_type,
                         cling_url=self.cling_url,
                         cling_branch=self.cling_branch,
@@ -568,7 +571,7 @@ class XCC_gen:
                     stage += environment(variables=env)
             elif p['tag'] == 'jupyter_kernel':
                 if 'jupyter_kernel' not in exclude_list:
-                    stage += shell(commands=self.build_jupyter_kernel(
+                    stage += shell(commands=self.build_rel_jupyter_kernel(
                         build_prefix=self.build_prefix,
                         miniconda_prefix='/opt',
                         remove_list=self.remove_list))
@@ -576,17 +579,20 @@ class XCC_gen:
                 raise ValueError('unknown tag: ' + p['tag'])
 
     @staticmethod
-    def build_cling(build_prefix: str, install_prefix: str, build_type: str,
-                    cling_url: str, cling_branch=None, cling_hash=None,
-                    threads=None, linker_threads=None, remove_list=None,
-                    dual_build=None, git_cling_opts=['--depth=1'],
-                    build_libcxx=None) -> Tuple[List[str], List[str]]:
+    def build_cling(build_prefix: str, install_prefix: str, miniconda_prefix : str,
+                    build_type: str, cling_url: str, cling_branch=None,
+                    cling_hash=None, threads=None, linker_threads=None,
+                    remove_list=None, dual_build=None,
+                    git_cling_opts=['--depth=1'], build_libcxx=None
+    ) -> Tuple[List[str], List[str]]:
         """Return Cling build instructions.
 
         :param build_prefix: path where source code is cloned and built
         :type build_prefix: str
         :param install_prefix: CMAKE_INSTALL_PREFIX
         :type install_prefix: str
+        :param miniconda_prefix: path to the miniconda3 installation
+        :type miniconda_prefix: str
         :param build_type: CMAKE_BUILD_TYPE
         :type build_type: str
         :param cling_url: GitHub url of the Cling repository
@@ -688,6 +694,13 @@ class XCC_gen:
                                                opts=cmake_opts))
             cbc.append(cm_cling.build_step(parallel=None, target='install'))
             cling_install_prefix.append(build['install_dir'])
+
+            cbc.append('PATH_bak=$PATH')
+            cbc.append('PATH=$PATH:' + build['install_dir'] + '/bin')
+            cbc.append('cd ' + build['install_dir'] + '/share/cling/Jupyter/kernel')
+            cbc.append(miniconda_prefix + '/bin/pip install -e .')
+            cbc.append('PATH=$PATH_bak')
+            cbc.append('cd - ')
 
         if type(remove_list) is list:
             for build in cm_builds:
@@ -896,7 +909,7 @@ class XCC_gen:
         return cm, {'PATH': '$PATH:' + install_prefix + '/miniconda3/bin/'}
 
     @staticmethod
-    def build_jupyter_kernel(build_prefix: str, miniconda_prefix: str, user_install=False, remove_list=None) -> List[str]:
+    def build_rel_jupyter_kernel(build_prefix: str, miniconda_prefix: str, user_install=False, remove_list=None) -> List[str]:
         """Returns jupyter kernel and instructions to install it
 
         :param build_prefix: path, where the kernels are stored
@@ -916,22 +929,50 @@ class XCC_gen:
             user_install_arg = '--user '
 
         kernel_register = []
+        # xeus-cling cuda kernel
         for std in [11, 14, 17]:
             kernel_path = build_prefix+'/xeus-cling-cpp'+str(std)+'-cuda'
             kernel_register.append('mkdir -p ' + kernel_path)
             kernel_register.append("echo '" +
-                                   XCC_gen.gen_jupyter_kernel(miniconda_prefix, std) +
+                                   XCC_gen.gen_xeus_cling_jupyter_kernel(miniconda_prefix, std) +
                                    "' > " + kernel_path + "/kernel.json")
             kernel_register.append(
                 'jupyter-kernelspec install ' + user_install_arg + kernel_path)
             if type(remove_list) is list:
                 remove_list.append(kernel_path)
 
+        # cling-cpp kernel
+        for std in [11, 14, 17]:
+            kernel_path = build_prefix+'/cling-cpp'+str(std)
+            kernel_register.append('mkdir -p ' + kernel_path)
+            kernel_register.append("echo '" +
+                                   XCC_gen.gen_cling_jupyter_kernel(miniconda_prefix, std, False) +
+                                   "' > " + kernel_path + "/kernel.json")
+            kernel_register.append(
+                'jupyter-kernelspec install ' + user_install_arg + kernel_path)
+            if type(remove_list) is list:
+                remove_list.append(kernel_path)
+
+        # cling-cuda kernel
+        for std in [11, 14, 17]:
+            kernel_path = build_prefix+'/cling-cpp'+str(std)+'-cuda'
+            kernel_register.append('mkdir -p ' + kernel_path)
+            kernel_register.append("echo '" +
+                                   XCC_gen.gen_cling_jupyter_kernel(miniconda_prefix, std, True) +
+                                   "' > " + kernel_path + "/kernel.json")
+            kernel_register.append(
+                'jupyter-kernelspec install ' + user_install_arg + kernel_path)
+            if type(remove_list) is list:
+                remove_list.append(kernel_path)
+
+
+
+
         return kernel_register
 
     @staticmethod
     def build_dev_jupyter_kernel(build_prefix: str, miniconda_prefix: str, remove_list=None) -> List[str]:
-        """Returns jupyter kernel and instructions to install it in the miniconda3 folder. For release builds, please use build_jupyter_kernel().
+        """Returns jupyter kernel and instructions to install it in the miniconda3 folder. For release builds, please use build_rel_jupyter_kernel().
 
         :param build_prefix: path, where the kernels are stored
         :type build_prefix: str
@@ -947,11 +988,34 @@ class XCC_gen:
         kernel_register = []
         kernel_register.append('mkdir -p ' + miniconda_prefix + '/miniconda3/share/jupyter/kernels/')
 
+        # xeus-cling cuda kernel
         for std in [11, 14, 17]:
             kernel_path = build_prefix+'/xeus-cling-cpp'+str(std)+'-cuda'
             kernel_register.append('mkdir -p ' + kernel_path)
             kernel_register.append("echo '" +
-                                   XCC_gen.gen_jupyter_kernel(miniconda_prefix, std) +
+                                   XCC_gen.gen_xeus_cling_jupyter_kernel(miniconda_prefix, std) +
+                                   "' > " + kernel_path + "/kernel.json")
+            kernel_register.append('cp -r ' + kernel_path + ' ' + miniconda_prefix + '/miniconda3/share/jupyter/kernels/')
+            if type(remove_list) is list:
+                remove_list.append(kernel_path)
+
+        # cling-cpp kernel
+        for std in [11, 14, 17]:
+            kernel_path = build_prefix+'/cling-cpp'+str(std)
+            kernel_register.append('mkdir -p ' + kernel_path)
+            kernel_register.append("echo '" +
+                                   XCC_gen.gen_cling_jupyter_kernel(miniconda_prefix, std, False) +
+                                   "' > " + kernel_path + "/kernel.json")
+            kernel_register.append('cp -r ' + kernel_path + ' ' + miniconda_prefix + '/miniconda3/share/jupyter/kernels/')
+            if type(remove_list) is list:
+                remove_list.append(kernel_path)
+
+        # cling-cuda kernel
+        for std in [11, 14, 17]:
+            kernel_path = build_prefix+'/cling-cpp'+str(std)+'-cuda'
+            kernel_register.append('mkdir -p ' + kernel_path)
+            kernel_register.append("echo '" +
+                                   XCC_gen.gen_cling_jupyter_kernel(miniconda_prefix, std, True) +
                                    "' > " + kernel_path + "/kernel.json")
             kernel_register.append('cp -r ' + kernel_path + ' ' + miniconda_prefix + '/miniconda3/share/jupyter/kernels/')
             if type(remove_list) is list:
@@ -960,8 +1024,8 @@ class XCC_gen:
         return kernel_register
 
     @classmethod
-    def gen_jupyter_kernel(self, miniconda_prefix: str, cxx_std: int) -> str:
-        """Generate jupyter kernel description files with cuda support for different C++ standards
+    def gen_xeus_cling_jupyter_kernel(self, miniconda_prefix: str, cxx_std: int) -> str:
+        """Generate jupyter kernel description files with cuda support for different C++ standards. The kernels uses xeus-cling.
 
         :param miniconda_prefix: path to the miniconda installation
         :type miniconda_prefix: str
@@ -972,7 +1036,7 @@ class XCC_gen:
 
         """
         return json.dumps({
-            'display_name': 'C++'+str(cxx_std)+'-CUDA',
+            'display_name': 'Xeus-C++'+str(cxx_std)+'-CUDA',
             'argv': [
                 miniconda_prefix + '/miniconda3/bin/xcpp',
                 '-f',
@@ -983,6 +1047,38 @@ class XCC_gen:
             'language': 'C++'+str(cxx_std)
         }
         )
+
+    @classmethod
+    def gen_cling_jupyter_kernel(self, miniconda_prefix: str, cxx_std: int, cuda : bool) -> str:
+        """Generate jupyter kernel description files with cuda support for different C++ standards. The kernels uses the jupyter kernel of the cling project.
+
+        :param miniconda_prefix: path to the miniconda installation
+        :type miniconda_prefix: str
+        :param cxx_std: C++ Standard as number (options: 11, 14, 17)
+        :type cxx_std: int
+        :param cuda: if true, create kernel description file with cuda support
+        :type cuda: bool
+        :returns: json string
+        :rtype: str
+
+        """
+        kernel_json = {
+            'display_name': 'Cling-C++'+str(cxx_std) + ('-CUDA' if cuda else ''),
+            'argv': [
+                'jupyter-cling-kernel',
+                '-f',
+                '{connection_file}',
+                '--std=c++'+str(cxx_std)
+            ],
+            'language': 'C++'
+        }
+
+        if cuda:
+            kernel_json['env'] = {'CLING_OPTS': '-xcuda'}
+
+        return json.dumps(kernel_json)
+
+
 
     def __str__(self):
         s = ''
