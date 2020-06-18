@@ -1,0 +1,1 @@
+#import xcc.generator

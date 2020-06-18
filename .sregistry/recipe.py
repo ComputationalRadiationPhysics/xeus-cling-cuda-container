@@ -3,7 +3,7 @@ import shutil, subprocess
 from typing import Dict
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-import generator as gn
+import xcc.generator as gn
 
 
 def main():

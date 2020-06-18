@@ -12,7 +12,7 @@ import argparse
 import json
 import sys
 import os
-import generator as gn
+import xcc.generator as gn
 
 
 def main():
