@@ -24,7 +24,12 @@ def build_openssl(
         """
     make_threads = config.get_cmake_compiler_threads()
 
-    cm = []
+    cm = [
+        "",
+        "#///////////////////////////////////////////////////////////",
+        "#// Install OpenSSL                                       //",
+        "#///////////////////////////////////////////////////////////",
+    ]
     wget_ssl = wget()
     tar_ssl = tar()
     cm.append(

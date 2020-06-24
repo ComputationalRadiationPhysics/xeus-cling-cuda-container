@@ -36,6 +36,21 @@ def build_cling(
     linker_threads = config.get_cmake_linker_threads()
 
     cbc: List[str] = []
+
+    cbc += [
+        "",
+        "#///////////////////////////////////////////////////////////",
+        "#// Install Cling                                         //",
+        "#///////////////////////////////////////////////////////////",
+    ]
+
+    cbc += [
+        "",
+        "#/////////////////////////////",
+        "#// Download Cling sources  //",
+        "#/////////////////////////////",
+    ]
+
     git_llvm = git()
     cbc.append(
         git_llvm.clone_step(
@@ -83,6 +98,13 @@ def build_cling(
         )
 
     for build in config.get_cling_build():
+        cbc += [
+            "",
+            "#/////////////////////////////",
+            "{:<28}".format("#// Build Cling " + build.build_type) + "//",
+            "#/////////////////////////////",
+        ]
+
         cmake_opts = [
             "-G Ninja",
             "-DCMAKE_BUILD_TYPE=" + build.build_type,

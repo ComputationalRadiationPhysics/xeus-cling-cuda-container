@@ -25,7 +25,12 @@ def build_xeus_cling(
         :rtype: List[str]
 
         """
-    cm = []
+    cm = [
+        "",
+        "#///////////////////////////////////////////////////////////",
+        "#// Install Xeus-Cling                                    //",
+        "#///////////////////////////////////////////////////////////",
+    ]
     git_conf = git()
     cm.append(
         git_conf.clone_step(
@@ -41,6 +46,12 @@ def build_xeus_cling(
     # for dual build different bin paths are necessary
     cm.append("bPATH=$PATH")
     for build in config.get_xeus_cling_build():
+        cm += [
+            "",
+            "#/////////////////////////////",
+            "{:<28}".format("#// Build Xeus-Cling " + build.build_type) + "//",
+            "#/////////////////////////////",
+        ]
         # add path to llvm-config for the xeus-cling build
         cm.append("PATH=$bPATH:/" + build.cling_install_path + "/bin")
 

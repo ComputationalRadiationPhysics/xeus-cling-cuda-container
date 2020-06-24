@@ -68,6 +68,15 @@ def gen_base_stage(config: xcc.config.XCC_Config) -> hpccm.Stage:
         commands=["locale-gen en_US.UTF-8", "update-locale LANG=en_US.UTF-8"]
     )
 
+    stage += shell(
+        commands=[
+            "",
+            "#/////////////////////////////",
+            "#// Install Clang and tools //",
+            "#/////////////////////////////",
+        ]
+    )
+
     # install clang/llvm
     # add ppa for modern clang/llvm versions
     stage += shell(
@@ -119,6 +128,10 @@ def gen_base_stage(config: xcc.config.XCC_Config) -> hpccm.Stage:
     # install ninja build system
     stage += shell(
         commands=[
+            "",
+            "#/////////////////////////////",
+            "#// Install Ninja           //",
+            "#/////////////////////////////",
             "cd /opt",
             "wget https://github.com/ninja-build/ninja/releases/download/v1.9.0/ninja-linux.zip",
             "unzip ninja-linux.zip",

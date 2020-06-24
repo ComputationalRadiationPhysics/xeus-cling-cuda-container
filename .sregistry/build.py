@@ -4,7 +4,7 @@ from typing import Dict
 import recipe as rc
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-import generator as gn
+import xcc.generator as gn
 
 def main():
     if len(sys.argv) < 2:

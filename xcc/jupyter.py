@@ -24,9 +24,15 @@ def build_rel_jupyter_kernel(
     if user_install:
         user_install_arg = "--user "
 
-    kernel_register = []
+    kernel_register: List[str] = []
     # xeus-cling cuda kernel
     for std in [11, 14, 17]:
+        kernel_register += [
+            "",
+            "#/////////////////////////////",
+            "{:<28}".format("#// Jupyter Kernel: Xeus " + str(std) + " cuda") + "//",
+            "#/////////////////////////////",
+        ]
         kernel_path = config.build_prefix + "/xeus-cling-cpp" + str(std) + "-cuda"
         kernel_register.append("mkdir -p " + kernel_path)
         kernel_register.append(
@@ -44,6 +50,12 @@ def build_rel_jupyter_kernel(
 
     # cling-cpp kernel
     for std in [11, 14, 17]:
+        kernel_register += [
+            "",
+            "#/////////////////////////////",
+            "{:<28}".format("#// Jupyter Kernel: Cling " + str(std)) + "//",
+            "#/////////////////////////////",
+        ]
         kernel_path = config.build_prefix + "/cling-cpp" + str(std)
         kernel_register.append("mkdir -p " + kernel_path)
         kernel_register.append(
@@ -61,6 +73,12 @@ def build_rel_jupyter_kernel(
 
     # cling-cuda kernel
     for std in [11, 14, 17]:
+        kernel_register += [
+            "",
+            "#/////////////////////////////",
+            "{:<28}".format("#// Jupyter Kernel: Cling " + str(std) + " cuda") + "//",
+            "#/////////////////////////////",
+        ]
         kernel_path = config.build_prefix + "/cling-cpp" + str(std) + "-cuda"
         kernel_register.append("mkdir -p " + kernel_path)
         kernel_register.append(
@@ -97,6 +115,12 @@ def build_dev_jupyter_kernel(config: xcc.config.XCC_Config) -> List[str]:
 
     # xeus-cling cuda kernel
     for std in [11, 14, 17]:
+        kernel_register += [
+            "",
+            "#/////////////////////////////",
+            "{:<28}".format("#// Jupyter Kernel: Xeus " + str(std) + " cuda") + "//",
+            "#/////////////////////////////",
+        ]
         kernel_path = kernel_prefix + "/xeus-cling-cpp" + str(std) + "-cuda"
         kernel_register.append("mkdir -p " + kernel_path)
         kernel_register.append(
@@ -118,6 +142,12 @@ def build_dev_jupyter_kernel(config: xcc.config.XCC_Config) -> List[str]:
 
     # cling-cpp kernel
     for std in [11, 14, 17]:
+        kernel_register += [
+            "",
+            "#/////////////////////////////",
+            "{:<28}".format("#// Jupyter Kernel: Cling " + str(std)) + "//",
+            "#/////////////////////////////",
+        ]
         kernel_path = kernel_prefix + "/cling-cpp" + str(std)
         kernel_register.append("mkdir -p " + kernel_path)
         kernel_register.append(
@@ -139,6 +169,12 @@ def build_dev_jupyter_kernel(config: xcc.config.XCC_Config) -> List[str]:
 
     # cling-cuda kernel
     for std in [11, 14, 17]:
+        kernel_register += [
+            "",
+            "#/////////////////////////////",
+            "{:<28}".format("#// Jupyter Kernel: Cling " + str(std) + " cuda") + "//",
+            "#/////////////////////////////",
+        ]
         kernel_path = kernel_prefix + "/cling-cpp" + str(std) + "-cuda"
         kernel_register.append("mkdir -p " + kernel_path)
         kernel_register.append(
