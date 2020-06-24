@@ -4,7 +4,6 @@ integration into other projects. Use the
 
 * gen_devel_stage()
 * gen_release_single_stage()
-* gen_release_multi_stage() (experimental)
 
 """
 
@@ -23,6 +22,7 @@ from xcc.helper import build_git_and_cmake, add_libcxx_cmake_arg
 from xcc.openssl import build_openssl
 from xcc.miniconda import build_miniconda
 from xcc.jupyter import build_dev_jupyter_kernel, build_rel_jupyter_kernel
+from xcc.basestage import gen_base_stage
 import xcc.config
 
 
@@ -229,7 +229,7 @@ class XCC_gen:
         :rtype: hpccm.Stage
 
         """
-        stage0 = self.__gen_base_stage()
+        stage0 = gen_base_stage(self.config)
         # set the path to the changeable project as environment variable
         stage0 += environment(variables={"XCC_PROJECT_PATH": project_path})
 
@@ -305,7 +305,7 @@ class XCC_gen:
         :rtype: hpccm.Stage
 
         """
-        stage0 = self.__gen_base_stage()
+        stage0 = gen_base_stage(self.config)
 
         self.__gen_project_builds(stage=stage0)
 
@@ -316,222 +316,6 @@ class XCC_gen:
             )
 
         stage0 += raw(docker="EXPOSE 8888")
-
-        return stage0
-
-    def gen_release_multi_stages(self) -> List[hpccm.Stage]:
-        """Get a release recipe for the stack. The stack contains two stages. Save a little bit memory on singularity and much on docker, but it is more error prone.
-
-        :returns: list of hpccm Stages
-        :rtype: List[hpccm.Stage]
-
-        """
-        if not self.config.install_prefix.startswith(
-            "/tmp"
-        ) and not self.config.install_prefix.startswith("/opt"):
-            raise ValueError(
-                "multi stage release container: install_prefix"
-                "must start with /tmp or /opt\n"
-                "Your path: " + self.config.install_prefix
-            )
-
-        ##################################################################
-        # set container basics
-        ##################################################################
-        stage0 = self.__gen_base_stage()
-
-        self.__gen_project_builds(stage=stage0, exclude_list=["jupyter_kernel"])
-
-        ##################################################################
-        # create release stage copy application
-        ##################################################################
-        stage1 = hpccm.Stage()
-        stage1 += baseimage(image="nvidia/cuda:8.0-devel-ubuntu16.04", _as="stage1")
-        stage1 += environment(
-            variables={"LD_LIBRARY_PATH": "$LD_LIBRARY_PATH:/usr/local/cuda/lib64"}
-        )
-
-        stage1 += packages(ospackages=["locales", "locales-all"])
-        # set language to en_US.UTF-8 to avoid some problems with the cling output system
-        stage1 += shell(
-            commands=["locale-gen en_US.UTF-8", "update-locale LANG=en_US.UTF-8"]
-        )
-
-        # the semantic of the copy command is depend on the container software
-        # singularity COPY /opt/foo /opt results to /opt/foo on the target
-        # docker COPY /opt/foo /opt results to /opt on the target
-        if self.config.container == "singularity":
-            if self.config.install_prefix.startswith("/tmp"):
-                stage1 += copy(src=self.config.install_prefix, dest="/opt/")
-            else:
-                stage1 += copy(
-                    _from="stage0", src=self.config.install_prefix, dest="/opt/"
-                )
-        else:
-            stage1 += copy(
-                _from="stage0",
-                src=self.config.install_prefix,
-                dest="/opt/xeus_cling_cuda_install",
-            )
-
-        # merge content of install_dir in /usr/local
-        stage1 += shell(
-            commands=[
-                "cp -rl /opt/xeus_cling_cuda_install/* /usr/local/",
-                "rm -r /opt/xeus_cling_cuda_install/",
-            ]
-        )
-
-        if self.config.container == "singularity":
-            stage1 += shell(commands=["mkdir -p /run/user", "chmod 777 /run/user"])
-
-        # copy Miniconda 3 with all packages
-        if self.config.container == "singularity":
-            stage1 += copy(_from="stage0", src="/opt/miniconda3", dest="/opt/")
-        else:
-            stage1 += copy(
-                _from="stage0", src="/opt/miniconda3", dest="/opt/miniconda3"
-            )
-
-        stage1 += environment(variables={"PATH": "$PATH:/opt/miniconda3/bin/"})
-
-        stage1 += shell(commands=build_rel_jupyter_kernel(config=self.config,))
-
-        ##################################################################
-        # remove files
-        ##################################################################
-        if not self.config.keep_build:
-            r = rm()
-            stage1 += shell(
-                commands=[
-                    r.cleanup_step(
-                        items=self.config.paths_to_delete + [self.config.install_prefix]
-                    )
-                ]
-            )
-
-        stage1 += raw(docker="EXPOSE 8888")
-
-        return [stage0, stage1]
-
-    def __gen_base_stage(self) -> hpccm.Stage:
-        """Returns an nvidia cuda container stage, which has some basic configuration.
-
-            * labels are set
-            * software via apt installed
-            * set language to en_US.UTF-8
-            * install modern cmake version
-            * create folder /run/user
-
-            :returns: hpccm Stage
-            :rtype: hpccm.Stage
-
-            """
-        hpccm.config.set_container_format(self.config.container)
-        if self.config.container == "singularity":
-            hpccm.config.set_singularity_version("3.3")
-
-        stage0 = hpccm.Stage()
-        stage0 += baseimage(image="nvidia/cuda:8.0-devel-ubuntu16.04", _as="stage0")
-
-        stage0 += label(
-            metadata={
-                "XCC Version": str(self.config.version),
-                "Author": self.config.author,
-                "E-Mail": self.config.email,
-            }
-        )
-
-        if self.config.gen_args:
-            stage0 += environment(
-                variables={"XCC_GEN_ARGS": '"' + self.config.gen_args + '"'}
-            )
-
-        # LD_LIBRARY_PATH is not taken over correctly when the docker container
-        # is converted to a singularity container.
-        stage0 += environment(
-            variables={"LD_LIBRARY_PATH": "$LD_LIBRARY_PATH:/usr/local/cuda/lib64"}
-        )
-        stage0 += environment(
-            variables={"CMAKE_PREFIX_PATH": self.config.install_prefix}
-        )
-        stage0 += packages(
-            ospackages=[
-                "git",
-                "python",
-                "wget",
-                "pkg-config",
-                "uuid-dev",
-                "gdb",
-                "locales",
-                "locales-all",
-                "unzip",
-            ]
-        )
-        # set language to en_US.UTF-8 to avoid some problems with the cling output system
-        stage0 += shell(
-            commands=["locale-gen en_US.UTF-8", "update-locale LANG=en_US.UTF-8"]
-        )
-
-        # install clang/llvm
-        # add ppa for modern clang/llvm versions
-        stage0 += shell(
-            commands=[
-                "wget http://llvm.org/apt/llvm-snapshot.gpg.key",
-                "apt-key add llvm-snapshot.gpg.key",
-                "rm llvm-snapshot.gpg.key",
-                'echo "" >> /etc/apt/sources.list',
-                'echo "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-'
-                + str(self.config.clang_version)
-                + ' main" >> /etc/apt/sources.list',
-                'echo "deb-src http://apt.llvm.org/xenial/ llvm-toolchain-xenial-'
-                + str(self.config.clang_version)
-                + ' main" >> /etc/apt/sources.list',
-            ]
-        )
-
-        stage0 += llvm(version=str(self.config.clang_version))
-        # set clang 8 as compiler for all projects during container build time
-        stage0 += shell(
-            commands=[
-                "export CC=clang-" + str(self.config.clang_version),
-                "export CXX=clang++-" + str(self.config.clang_version),
-            ]
-        )
-
-        # install clang development tools
-        clang_extra = [
-            "clang-tidy-" + str(self.config.clang_version),
-            "clang-tools-" + str(self.config.clang_version),
-        ]
-
-        # install libc++ and libc++abi depending of the clang version
-        if self.config.build_libcxx:
-            clang_extra += [
-                "libc++1-" + str(self.config.clang_version),
-                "libc++-" + str(self.config.clang_version) + "-dev",
-                "libc++abi1-" + str(self.config.clang_version),
-                "libc++abi-" + str(self.config.clang_version) + "-dev",
-            ]
-        stage0 += packages(ospackages=clang_extra)
-
-        stage0 += cmake(eula=True, version="3.15.2")
-
-        # the folder is necessary for jupyter lab
-        if self.config.container == "singularity":
-            stage0 += shell(commands=["mkdir -p /run/user", "chmod 777 /run/user"])
-
-        # install ninja build system
-        stage0 += shell(
-            commands=[
-                "cd /opt",
-                "wget https://github.com/ninja-build/ninja/releases/download/v1.9.0/ninja-linux.zip",
-                "unzip ninja-linux.zip",
-                "mv ninja /usr/local/bin/",
-                "rm ninja-linux.zip",
-                "cd -",
-            ]
-        )
 
         return stage0
 
