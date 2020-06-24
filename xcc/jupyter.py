@@ -8,21 +8,14 @@ import xcc.config
 
 
 def build_rel_jupyter_kernel(
-    build_prefix: str,
-    miniconda_prefix: str,
-    config: xcc.config.XCC_Config,
-    user_install=False,
+    config: xcc.config.XCC_Config, user_install=False,
 ) -> List[str]:
     """Returns jupyter kernel and instructions to install it
 
-        :param build_prefix: path, where the kernels are stored
-        :type build_prefix: str
-        :param miniconda_prefix: path to the miniconda installation (should contain xcpp executable)
-        :type miniconda_prefix: str
+        :param config: Configuration object, which contains different information for the stage
+        :type config: xcc.config.XCC_Config
         :param user_install: if true, add flag --user to jupyter-kernelspec install
         :type user_install: bool
-        :param remove_list: The list contains folders and files, which will be removed. If None, no item will be removed.
-        :type remove_list: [str]
         :returns: list of bash commands
         :rtype: List[str]
 
@@ -34,11 +27,11 @@ def build_rel_jupyter_kernel(
     kernel_register = []
     # xeus-cling cuda kernel
     for std in [11, 14, 17]:
-        kernel_path = build_prefix + "/xeus-cling-cpp" + str(std) + "-cuda"
+        kernel_path = config.build_prefix + "/xeus-cling-cpp" + str(std) + "-cuda"
         kernel_register.append("mkdir -p " + kernel_path)
         kernel_register.append(
             "echo '"
-            + gen_xeus_cling_jupyter_kernel(miniconda_prefix, std)
+            + gen_xeus_cling_jupyter_kernel(config.get_miniconda_path(), std)
             + "' > "
             + kernel_path
             + "/kernel.json"
@@ -51,11 +44,11 @@ def build_rel_jupyter_kernel(
 
     # cling-cpp kernel
     for std in [11, 14, 17]:
-        kernel_path = build_prefix + "/cling-cpp" + str(std)
+        kernel_path = config.build_prefix + "/cling-cpp" + str(std)
         kernel_register.append("mkdir -p " + kernel_path)
         kernel_register.append(
             "echo '"
-            + gen_cling_jupyter_kernel(miniconda_prefix, std, False)
+            + gen_cling_jupyter_kernel(std, False)
             + "' > "
             + kernel_path
             + "/kernel.json"
@@ -68,11 +61,11 @@ def build_rel_jupyter_kernel(
 
     # cling-cuda kernel
     for std in [11, 14, 17]:
-        kernel_path = build_prefix + "/cling-cpp" + str(std) + "-cuda"
+        kernel_path = config.build_prefix + "/cling-cpp" + str(std) + "-cuda"
         kernel_register.append("mkdir -p " + kernel_path)
         kernel_register.append(
             "echo '"
-            + gen_cling_jupyter_kernel(miniconda_prefix, std, True)
+            + gen_cling_jupyter_kernel(std, True)
             + "' > "
             + kernel_path
             + "/kernel.json"
@@ -86,34 +79,29 @@ def build_rel_jupyter_kernel(
     return kernel_register
 
 
-def build_dev_jupyter_kernel(
-    build_prefix: str, miniconda_prefix: str, remove_list=None
-) -> List[str]:
+def build_dev_jupyter_kernel(config: xcc.config.XCC_Config) -> List[str]:
     """Returns jupyter kernel and instructions to install it in the miniconda3 folder. For release builds, please use build_rel_jupyter_kernel().
 
-        :param build_prefix: path, where the kernels are stored
-        :type build_prefix: str
-        :param miniconda_prefix: path to the miniconda installation (should contain xcpp executable)
-        :type miniconda_prefix: str
-        :param remove_list: The list contains folders and files, which will be removed. If None, no item will be removed.
-        :type remove_list: [str]
+        :param config: Configuration object, which contains different information for the stage
+        :type config: xcc.config.XCC_Config
         :returns: list of bash commands
         :rtype: List[str]
 
         """
+    kernel_prefix = config.build_prefix + "/kernels"
 
     kernel_register = []
     kernel_register.append(
-        "mkdir -p " + miniconda_prefix + "/miniconda3/share/jupyter/kernels/"
+        "mkdir -p " + config.get_miniconda_path() + "/share/jupyter/kernels/"
     )
 
     # xeus-cling cuda kernel
     for std in [11, 14, 17]:
-        kernel_path = build_prefix + "/xeus-cling-cpp" + str(std) + "-cuda"
+        kernel_path = kernel_prefix + "/xeus-cling-cpp" + str(std) + "-cuda"
         kernel_register.append("mkdir -p " + kernel_path)
         kernel_register.append(
             "echo '"
-            + gen_xeus_cling_jupyter_kernel(miniconda_prefix, std)
+            + gen_xeus_cling_jupyter_kernel(config.get_miniconda_path(), std)
             + "' > "
             + kernel_path
             + "/kernel.json"
@@ -122,19 +110,19 @@ def build_dev_jupyter_kernel(
             "cp -r "
             + kernel_path
             + " "
-            + miniconda_prefix
-            + "/miniconda3/share/jupyter/kernels/"
+            + config.get_miniconda_path()
+            + "/share/jupyter/kernels/"
         )
-        if type(remove_list) is list:
-            remove_list.append(kernel_path)
+        if not config.keep_build:
+            config.paths_to_delete.append(kernel_path)
 
     # cling-cpp kernel
     for std in [11, 14, 17]:
-        kernel_path = build_prefix + "/cling-cpp" + str(std)
+        kernel_path = kernel_prefix + "/cling-cpp" + str(std)
         kernel_register.append("mkdir -p " + kernel_path)
         kernel_register.append(
             "echo '"
-            + gen_cling_jupyter_kernel(miniconda_prefix, std, False)
+            + gen_cling_jupyter_kernel(std, False)
             + "' > "
             + kernel_path
             + "/kernel.json"
@@ -143,19 +131,19 @@ def build_dev_jupyter_kernel(
             "cp -r "
             + kernel_path
             + " "
-            + miniconda_prefix
-            + "/miniconda3/share/jupyter/kernels/"
+            + config.get_miniconda_path()
+            + "/share/jupyter/kernels/"
         )
-        if type(remove_list) is list:
-            remove_list.append(kernel_path)
+        if not config.keep_build:
+            config.paths_to_delete.append(kernel_path)
 
     # cling-cuda kernel
     for std in [11, 14, 17]:
-        kernel_path = build_prefix + "/cling-cpp" + str(std) + "-cuda"
+        kernel_path = kernel_prefix + "/cling-cpp" + str(std) + "-cuda"
         kernel_register.append("mkdir -p " + kernel_path)
         kernel_register.append(
             "echo '"
-            + gen_cling_jupyter_kernel(miniconda_prefix, std, True)
+            + gen_cling_jupyter_kernel(std, True)
             + "' > "
             + kernel_path
             + "/kernel.json"
@@ -164,16 +152,16 @@ def build_dev_jupyter_kernel(
             "cp -r "
             + kernel_path
             + " "
-            + miniconda_prefix
-            + "/miniconda3/share/jupyter/kernels/"
+            + config.get_miniconda_path()
+            + "/share/jupyter/kernels/"
         )
-        if type(remove_list) is list:
-            remove_list.append(kernel_path)
+        if not config.keep_build:
+            config.paths_to_delete.append(kernel_path)
 
     return kernel_register
 
 
-def gen_xeus_cling_jupyter_kernel(miniconda_prefix: str, cxx_std: int) -> str:
+def gen_xeus_cling_jupyter_kernel(miniconda_path: str, cxx_std: int) -> str:
     """Generate jupyter kernel description files with cuda support for different C++ standards. The kernels uses xeus-cling.
 
         :param miniconda_prefix: path to the miniconda installation
@@ -188,7 +176,7 @@ def gen_xeus_cling_jupyter_kernel(miniconda_prefix: str, cxx_std: int) -> str:
         {
             "display_name": "Xeus-C++" + str(cxx_std) + "-CUDA",
             "argv": [
-                miniconda_prefix + "/miniconda3/bin/xcpp",
+                miniconda_path + "/bin/xcpp",
                 "-f",
                 "{connection_file}",
                 "-std=c++" + str(cxx_std),
@@ -199,11 +187,9 @@ def gen_xeus_cling_jupyter_kernel(miniconda_prefix: str, cxx_std: int) -> str:
     )
 
 
-def gen_cling_jupyter_kernel(miniconda_prefix: str, cxx_std: int, cuda: bool) -> str:
+def gen_cling_jupyter_kernel(cxx_std: int, cuda: bool) -> str:
     """Generate jupyter kernel description files with cuda support for different C++ standards. The kernels uses the jupyter kernel of the cling project.
 
-        :param miniconda_prefix: path to the miniconda installation
-        :type miniconda_prefix: str
         :param cxx_std: C++ Standard as number (options: 11, 14, 17)
         :type cxx_std: int
         :param cuda: if true, create kernel description file with cuda support

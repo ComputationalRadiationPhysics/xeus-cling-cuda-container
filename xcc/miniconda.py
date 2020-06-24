@@ -3,44 +3,38 @@
 
 from typing import Tuple, List, Dict
 
+from hpccm.templates.rm import rm
+
 import xcc.config
 
 
-def build_miniconda(
-    build_prefix: str, install_prefix: str, config: xcc.config.XCC_Config
-) -> Tuple[List[str], Dict[str, str]]:
+def build_miniconda(config: xcc.config.XCC_Config) -> Tuple[List[str], Dict[str, str]]:
     """Return Miniconda 3 installation instructions
 
-        :param build_prefix: path which the installation script is stored
-        :type build_prefix: str
-        :param install_prefix: path which miniconda is installed
-        :type install_prefix: str
         :param config: Configuration object, which contains different information for the stage
         :type config: xcc.config.XCC_Config
         :returns: list of bash commands and dictionary of environment variables
         :rtype: [str], {str,str}
 
         """
+    conda_bin = config.install_prefix + "/miniconda3/bin/"
+    conda_exe = conda_bin + "conda"
     cm = [
-        "cd " + build_prefix,
+        "cd /tmp",
         "wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh",
         "chmod u+x Miniconda3-latest-Linux-x86_64.sh",
-        "./Miniconda3-latest-Linux-x86_64.sh -b -p " + install_prefix + "/miniconda3",
-        "export PATH=$PATH:" + install_prefix + "/miniconda3/bin/",
-        install_prefix + "/miniconda3/bin/conda install -y -c conda-forge nodejs",
-        install_prefix + "/miniconda3/bin/conda install -y jupyter",
-        install_prefix + "/miniconda3/bin/conda install -y -c conda-forge jupyterlab",
-        install_prefix + "/miniconda3/bin/conda install -y -c biobuilds libuuid",
-        install_prefix
-        + "/miniconda3/bin/conda install -y widgetsnbextension -c conda-forge",
-        install_prefix
-        + "/miniconda3/bin/jupyter labextension install @jupyter-widgets/jupyterlab-manager",
+        "./Miniconda3-latest-Linux-x86_64.sh -b -p "
+        + config.install_prefix
+        + "/miniconda3",
+        "export PATH=$PATH:" + conda_bin,
+        conda_exe + " install -y -c conda-forge nodejs",
+        conda_exe + " install -y jupyter",
+        conda_exe + " install -y -c conda-forge jupyterlab",
+        conda_exe + " install -y -c biobuilds libuuid",
+        conda_exe + " install -y widgetsnbextension -c conda-forge",
+        conda_bin + "jupyter labextension install @jupyter-widgets/jupyterlab-manager",
+        "rm /tmp/Miniconda3-latest-Linux-x86_64.sh",
         "cd -",
     ]
 
-    if not config.keep_build:
-        config.paths_to_delete.append(
-            build_prefix + "/Miniconda3-latest-Linux-x86_64.sh"
-        )
-
-    return cm, {"PATH": "$PATH:" + install_prefix + "/miniconda3/bin/"}
+    return cm, {"PATH": "$PATH:" + conda_bin}
