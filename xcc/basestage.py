@@ -119,7 +119,7 @@ def gen_base_stage(config: xcc.config.XCC_Config) -> hpccm.Stage:
         ]
     stage += packages(ospackages=clang_extra)
 
-    stage += cmake(eula=True, version="3.15.2")
+    stage += cmake(eula=True, version="3.18.0")
 
     # the folder is necessary for jupyter lab
     if config.container == "singularity":

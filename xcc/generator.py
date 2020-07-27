@@ -337,7 +337,7 @@ class XCC_gen:
                             cling_branch=self.cling_branch,
                             cling_hash=self.cling_hash,
                             config=self.config,
-                        )[0]
+                        )
                     )
             elif p["tag"] == "xeus-cling":
                 if "xeus-cling" not in exclude_list:
