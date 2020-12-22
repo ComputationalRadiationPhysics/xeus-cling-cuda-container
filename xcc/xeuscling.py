@@ -5,53 +5,55 @@ from typing import List, Union
 
 from hpccm.templates.git import git
 from hpccm.templates.CMakeBuild import CMakeBuild
+from hpccm.primitives import shell, comment
 
 import xcc.config
-from xcc.helper import add_libcxx_cmake_arg
+from xcc.helper import add_libcxx_cmake_arg, add_comment_heading
 
 
 def build_xeus_cling(
-    url: str, branch: str, config: xcc.config.XCC_Config,
-) -> List[str]:
+    url: str,
+    branch: str,
+    config: xcc.config.XCC_Config,
+) -> List[Union[shell, comment]]:
     """Return Cling build instructions.
 
-        :param url: git clone url
-        :type url: str
-        :param branch: branch or version (git clone --branch)
-        :type branch: str
-        :param config: Configuration object, which contains different information for the stage
-        :type config: xcc.config.XCC_Config
-        :returns:  a list of build instructions
-        :rtype: List[str]
+    :param url: git clone url
+    :type url: str
+    :param branch: branch or version (git clone --branch)
+    :type branch: str
+    :param config: Configuration object, which contains different information for the stage
+    :type config: xcc.config.XCC_Config
+    :returns:  a list of hpccm.primitives
+    :rtype: List[Union[shell, comment]]
 
-        """
-    cm = [
-        "",
-        "#///////////////////////////////////////////////////////////",
-        "#// Install Xeus-Cling                                    //",
-        "#///////////////////////////////////////////////////////////",
-    ]
+    """
+    instr: List[Union[shell, comment]] = []
+
+    instr.append(add_comment_heading("Install Xeus-Cling"))
+
     git_conf = git()
-    cm.append(
-        git_conf.clone_step(
-            repository=url,
-            branch=branch,
-            path=config.build_prefix,
-            directory="xeus-cling",
+    instr.append(
+        shell(
+            commands=[
+                git_conf.clone_step(
+                    repository=url,
+                    branch=branch,
+                    path=config.build_prefix,
+                    directory="xeus-cling",
+                )
+            ]
         )
     )
 
     # backup PATH
     # xeus-cling requires the llvm-config executable file from the cling installation
     # for dual build different bin paths are necessary
-    cm.append("bPATH=$PATH")
     for build in config.get_xeus_cling_build():
-        cm += [
-            "",
-            "#/////////////////////////////",
-            "{:<28}".format("#// Build Xeus-Cling " + build.build_type) + "//",
-            "#/////////////////////////////",
-        ]
+        instr.append(add_comment_heading("Build Xeus-Cling " + build.build_type))
+
+        cm: List[str] = ["bPATH=$PATH"]
+
         # add path to llvm-config for the xeus-cling build
         cm.append("PATH=$bPATH:/" + build.cling_install_path + "/bin")
 
@@ -82,9 +84,13 @@ def build_xeus_cling(
             )
         )
 
+        cm.append("PATH=$bPATH")
+
+        instr.append(shell(commands=cm))
+
     if not config.keep_build:
         for build in config.get_xeus_cling_build():
             config.paths_to_delete.append(build.build_path)
         config.paths_to_delete.append(config.build_prefix + "/xeus-cling")
 
-    return cm
+    return instr

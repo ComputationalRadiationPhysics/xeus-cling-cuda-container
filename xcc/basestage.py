@@ -3,12 +3,13 @@
 """
 
 import hpccm
-from hpccm.primitives import baseimage, label, environment, shell
+from hpccm.primitives import baseimage, label, environment, shell, comment
 from hpccm.building_blocks.packages import packages
 from hpccm.building_blocks.cmake import cmake
 from hpccm.building_blocks.llvm import llvm
 
 import xcc.config
+from xcc.helper import add_comment_heading
 
 
 def gen_base_stage(config: xcc.config.XCC_Config) -> hpccm.Stage:
@@ -35,9 +36,9 @@ def gen_base_stage(config: xcc.config.XCC_Config) -> hpccm.Stage:
 
     stage += label(
         metadata={
-            "XCC Version": str(config.version),
-            "Author": config.author,
-            "E-Mail": config.email,
+            "XCC-Version": '"{}"'.format(str(config.version)),
+            "Author": '"{}"'.format(config.author),
+            "E-Mail": '"{}"'.format(config.email),
         }
     )
 
@@ -68,23 +69,24 @@ def gen_base_stage(config: xcc.config.XCC_Config) -> hpccm.Stage:
         commands=["locale-gen en_US.UTF-8", "update-locale LANG=en_US.UTF-8"]
     )
 
-    stage += shell(
-        commands=[
-            "",
-            "#/////////////////////////////",
-            "#// Install Clang and tools //",
-            "#/////////////////////////////",
-        ]
-    )
+    stage += add_comment_heading("Install Clang and tools")
 
-    # install clang/llvm
-    # add ppa for modern clang/llvm versions
-    stage += shell(
-        commands=[
-            "wget http://llvm.org/apt/llvm-snapshot.gpg.key",
-            "apt-key add llvm-snapshot.gpg.key",
-            "rm llvm-snapshot.gpg.key",
-            'echo "" >> /etc/apt/sources.list',
+    clang_install_command = [
+        "wget http://llvm.org/apt/llvm-snapshot.gpg.key",
+        "apt-key add llvm-snapshot.gpg.key",
+        "rm llvm-snapshot.gpg.key",
+        'echo "" >> /etc/apt/sources.list',
+    ]
+
+    if config.clang_version < 10:
+        clang_install_command += [
+            'echo "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial'
+            + ' main" >> /etc/apt/sources.list',
+            'echo "deb-src http://apt.llvm.org/xenial/ llvm-toolchain-xenial'
+            + ' main" >> /etc/apt/sources.list',
+        ]
+    else:
+        clang_install_command += [
             'echo "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-'
             + str(config.clang_version)
             + ' main" >> /etc/apt/sources.list',
@@ -92,15 +94,18 @@ def gen_base_stage(config: xcc.config.XCC_Config) -> hpccm.Stage:
             + str(config.clang_version)
             + ' main" >> /etc/apt/sources.list',
         ]
-    )
+
+    # install clang/llvm
+    # add ppa for modern clang/llvm versions
+    stage += shell(commands=clang_install_command)
 
     stage += llvm(version=str(config.clang_version))
     # set clang 8 as compiler for all projects during container build time
-    stage += shell(
-        commands=[
-            "export CC=clang-" + str(config.clang_version),
-            "export CXX=clang++-" + str(config.clang_version),
-        ]
+    stage += environment(
+        variables={
+            "CC": "clang-" + str(config.clang_version),
+            "CXX": "clang++-" + str(config.clang_version),
+        }
     )
 
     # install clang development tools
@@ -126,12 +131,10 @@ def gen_base_stage(config: xcc.config.XCC_Config) -> hpccm.Stage:
         stage += shell(commands=["mkdir -p /run/user", "chmod 777 /run/user"])
 
     # install ninja build system
+    stage += add_comment_heading("Install Ninja")
+
     stage += shell(
         commands=[
-            "",
-            "#/////////////////////////////",
-            "#// Install Ninja           //",
-            "#/////////////////////////////",
             "cd /opt",
             "wget https://github.com/ninja-build/ninja/releases/download/v1.9.0/ninja-linux.zip",
             "unzip ninja-linux.zip",

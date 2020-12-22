@@ -7,9 +7,12 @@ integration into other projects. Use the
 
 """
 
+import sys
+
 from typing import Tuple, List, Dict, Union
 from copy import deepcopy
 import hpccm
+from hpccm.common import container_type
 from hpccm.primitives import baseimage, shell, environment, raw, copy, runscript, label
 from hpccm.building_blocks.packages import packages
 from hpccm.building_blocks.cmake import cmake
@@ -18,7 +21,7 @@ from hpccm.templates.rm import rm
 
 from xcc.cling import build_cling
 from xcc.xeuscling import build_xeus_cling
-from xcc.helper import build_git_and_cmake, add_libcxx_cmake_arg
+from xcc.helper import build_git_and_cmake, add_libcxx_cmake_arg, add_comment_heading
 from xcc.openssl import build_openssl
 from xcc.miniconda import build_miniconda
 from xcc.jupyter import build_dev_jupyter_kernel, build_rel_jupyter_kernel
@@ -87,7 +90,7 @@ class XCC_gen:
 
         self.cling_url = "https://github.com/root-project/cling.git"
         self.cling_branch = None
-        self.cling_hash = "595580b"
+        self.cling_hash = "c054ac2"
 
         # have to be before building cling, because the cling jupyter kernel
         # needs pip
@@ -253,19 +256,14 @@ class XCC_gen:
         runscript_config.second_build_type = dual_build_type
         runscript_config.keep_build = True
 
-        cm_runscript: List[str] = []
-        # set clang as compiler
-        cm_runscript += [
-            "export CC=clang-" + str(self.config.clang_version),
-            "export CXX=clang++-" + str(self.config.clang_version),
-        ]
+        hpccm.config.g_ctype = container_type.BASH
+        runschript_helper_stage = hpccm.Stage()
 
         ##################################################################
         # miniconda
         ##################################################################
-        cm, env = build_miniconda(config=runscript_config)
-        stage0 += environment(variables=env)
-        cm_runscript += cm
+        for instr in build_miniconda(config=runscript_config):
+            runschript_helper_stage += instr
 
         ##################################################################
         # cling
@@ -273,14 +271,14 @@ class XCC_gen:
         # the default behavior is PREFIX=/usr/local/ -> install to /usr/local/bin ...
         # for development it is better to install to project_path/install
         # if the second build is activated, two different installation folders will be created automatically
-        cm = build_cling(
+        for instr in build_cling(
             cling_url=self.cling_url,
             cling_branch=self.cling_branch,
             cling_hash=self.cling_hash,
             config=runscript_config,
             git_cling_opts=[""],
-        )
-        cm_runscript += cm
+        ):
+            runschript_helper_stage += instr
 
         ##################################################################
         # xeus-cling
@@ -289,13 +287,27 @@ class XCC_gen:
             if p["name"] == "xeus-cling":
                 xc = p
 
-        cm_runscript += build_xeus_cling(
-            url=xc["url"], branch=xc["branch"], config=runscript_config,
-        )
+        for instr in build_xeus_cling(
+            url=xc["url"],
+            branch=xc["branch"],
+            config=runscript_config,
+        ):
+            runschript_helper_stage += instr
 
-        cm_runscript += build_dev_jupyter_kernel(config=runscript_config)
+        for instr in build_dev_jupyter_kernel(config=runscript_config):
+            runschript_helper_stage += instr
+
+        # set clang as compiler
+        cm_runscript = [
+            "export CC=clang-" + str(self.config.clang_version),
+            "export CXX=clang++-" + str(self.config.clang_version),
+        ]
+
+        cm_runscript += runschript_helper_stage.__str__().split("\n")
 
         stage0 += runscript(commands=cm_runscript)
+
+        hpccm.config.set_container_format(self.config.container)
         return stage0
 
     def gen_release_single_stage(self) -> hpccm.Stage:
@@ -310,12 +322,20 @@ class XCC_gen:
         self.__gen_project_builds(stage=stage0)
 
         if not self.config.keep_build:
+            stage0 += add_comment_heading("Remove Sources and Builds")
             r = rm()
             stage0 += shell(
                 commands=[r.cleanup_step(items=self.config.paths_to_delete)]
             )
 
         stage0 += raw(docker="EXPOSE 8888")
+
+        if self.config.container == "docker":
+            stage0 += add_comment_heading("Runscript")
+            stage0 += copy(
+                src="scripts/docker_rel_entrypoint.sh", dest="/usr/local/bin"
+            )
+            stage0 += runscript(commands=["/usr/local/bin/docker_rel_entrypoint.sh"])
 
         return stage0
 
@@ -331,47 +351,52 @@ class XCC_gen:
         for p in self.project_list:
             if p["tag"] == "cling":
                 if "cling" not in exclude_list:
-                    stage += shell(
-                        commands=build_cling(
-                            cling_url=self.cling_url,
-                            cling_branch=self.cling_branch,
-                            cling_hash=self.cling_hash,
-                            config=self.config,
-                        )
-                    )
+                    for instr in build_cling(
+                        cling_url=self.cling_url,
+                        cling_branch=self.cling_branch,
+                        cling_hash=self.cling_hash,
+                        config=self.config,
+                    ):
+                        stage += instr
+
             elif p["tag"] == "xeus-cling":
                 if "xeus-cling" not in exclude_list:
-                    stage += shell(
-                        commands=build_xeus_cling(
-                            url=p["url"], branch=p["branch"], config=self.config,
-                        )
-                    )
+                    for instr in build_xeus_cling(
+                        url=p["url"],
+                        branch=p["branch"],
+                        config=self.config,
+                    ):
+                        stage += instr
             elif p["tag"] == "git_cmake":
                 if p["name"] not in exclude_list:
-                    stage += shell(
-                        commands=build_git_and_cmake(
-                            name=p["name"],
-                            url=p["url"],
-                            branch=p["branch"],
-                            config=self.config,
-                            opts=p["opts"],
-                        )
-                    )
+                    for instr in build_git_and_cmake(
+                        name=p["name"],
+                        url=p["url"],
+                        branch=p["branch"],
+                        config=self.config,
+                        opts=p["opts"],
+                    ):
+                        stage += instr
+
             elif p["tag"] == "openssl":
                 if "openssl" not in exclude_list:
-                    shc, env = build_openssl(name="openssl-1.1.1c", config=self.config,)
-                    stage += shell(commands=shc)
-                    stage += environment(variables=env)
+                    for instr in build_openssl(
+                        name="openssl-1.1.1c",
+                        config=self.config,
+                    ):
+                        stage += instr
             elif p["tag"] == "miniconda":
                 if "miniconda" not in exclude_list:
-                    shc, env = build_miniconda(config=self.config,)
-                    stage += shell(commands=shc)
-                    stage += environment(variables=env)
+                    for instr in build_miniconda(
+                        config=self.config,
+                    ):
+                        stage += instr
             elif p["tag"] == "jupyter_kernel":
                 if "jupyter_kernel" not in exclude_list:
-                    stage += shell(
-                        commands=build_rel_jupyter_kernel(config=self.config,)
-                    )
+                    for instr in build_rel_jupyter_kernel(
+                        config=self.config,
+                    ):
+                        stage += instr
             else:
                 raise ValueError("unknown tag: " + p["tag"])
 

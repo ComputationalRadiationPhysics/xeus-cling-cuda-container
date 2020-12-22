@@ -5,7 +5,7 @@
 from typing import List, Union
 from copy import deepcopy
 
-supported_clang_version = [8, 9]
+supported_clang_version = [8, 11]
 
 
 class XCC_Config:
@@ -83,7 +83,7 @@ class XCC_Config:
         """
         self.author = "Simeon Ehrig"
         self.email = "s.ehrig@hzdr.de"
-        self.version = "2.3"
+        self.version = "2.4"
 
         if clang_version not in supported_clang_version:
             raise ValueError(

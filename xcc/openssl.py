@@ -3,33 +3,34 @@
 
 from typing import Union, List, Tuple, List, Dict
 
+from hpccm.primitives import shell, comment, environment
 from hpccm.templates.wget import wget
 from hpccm.templates.tar import tar
 
 import xcc.config
+from xcc.helper import add_comment_heading
 
 
 def build_openssl(
-    name: str, config: xcc.config.XCC_Config,
-) -> Tuple[List[str], Dict[str, str]]:
+    name: str,
+    config: xcc.config.XCC_Config,
+) -> List[Union[shell, comment, environment]]:
     """install openssl
 
-        :param name: Name of the version (e.g. openssl-1.1.1c). Should be sliced from the official URL.
-        :type name: str
-        :param config: Configuration object, which contains different information for the stage
-        :type config: xcc.config.XCC_Config
-        :returns: list of bash commands and dictionary of environment variables
-        :rtype: List[str], {str,str}
+    :param name: Name of the version (e.g. openssl-1.1.1c). Should be sliced from the official URL.
+    :type name: str
+    :param config: Configuration object, which contains different information for the stage
+    :type config: xcc.config.XCC_Config
+    :returns: list of hpccm.primitives
+    :rtype: List[Union[shell, comment, environment]]
 
-        """
+    """
+    instr: List[Union[shell, comment, environment]] = []
     make_threads = config.get_cmake_compiler_threads()
 
-    cm = [
-        "",
-        "#///////////////////////////////////////////////////////////",
-        "#// Install OpenSSL                                       //",
-        "#///////////////////////////////////////////////////////////",
-    ]
+    instr.append(add_comment_heading("Install OpenSSL"))
+
+    cm: List[str] = []
     wget_ssl = wget()
     tar_ssl = tar()
     cm.append(
@@ -55,4 +56,7 @@ def build_openssl(
         config.paths_to_delete.append(config.build_prefix + "/" + name)
         config.paths_to_delete.append(config.build_prefix + "/" + name + ".tar.gz")
 
-    return cm, {"OPENSSL_ROOT_DIR": config.install_prefix}
+    instr.append(shell(commands=cm))
+    instr.append(environment(variables={"OPENSSL_ROOT_DIR": config.install_prefix}))
+
+    return instr

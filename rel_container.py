@@ -13,6 +13,7 @@ import json
 import sys
 import os
 import xcc.generator as gn
+from xcc.config import supported_clang_version
 
 
 def main():
@@ -49,7 +50,7 @@ def main():
     parser.add_argument('--help_build_prefix', action='store_true',
                         help='get information about build process')
     parser.add_argument('--clang_version', type=int, default=8,
-                        choices=[8, 9],
+                        choices=supported_clang_version,
                         help='set the version of the clang project compiler (default: 8)')
     parser.add_argument('--store_gen_command', type=int, default=1,
                         choices=[0, 1],

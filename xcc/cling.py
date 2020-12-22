@@ -1,12 +1,14 @@
 """Function to create build instructions for cling.
 """
 
-from typing import Tuple, List
+from typing import List, Union
 
+from hpccm.primitives import shell, comment
 from hpccm.templates.git import git
 from hpccm.templates.CMakeBuild import CMakeBuild
 
 import xcc.config
+from xcc.helper import add_comment_heading
 
 
 def build_cling(
@@ -15,7 +17,7 @@ def build_cling(
     cling_branch=None,
     cling_hash=None,
     git_cling_opts=["--depth=1"],
-) -> List[str]:
+) -> List[Union[shell, comment]]:
     """Return Cling build instructions.
 
     :param cling_url: GitHub url of the Cling repository
@@ -28,31 +30,22 @@ def build_cling(
     :type config: xcc.config.XCC_Config
     :param git_cling_opts: Setting options for Git Clone
     :type git_cling_opts: [str]
-    :returns: a list of build instructions and a list of the install folders
-    :rtype: [str],[str]
+    :returns: a list of hpccm.primitives
+    :rtype: List[Union[shell, comment]]
 
     """
     compiler_threads = config.get_cmake_compiler_threads()
     linker_threads = config.get_cmake_linker_threads()
 
-    cbc: List[str] = []
+    instr: List[Union[shell, comment]] = []
 
-    cbc += [
-        "",
-        "#///////////////////////////////////////////////////////////",
-        "#// Install Cling                                         //",
-        "#///////////////////////////////////////////////////////////",
-    ]
+    instr.append(add_comment_heading("Install Cling"))
+    instr.append(add_comment_heading("Download Cling sources"))
 
-    cbc += [
-        "",
-        "#/////////////////////////////",
-        "#// Download Cling sources  //",
-        "#/////////////////////////////",
-    ]
+    prepare_sources: List[str] = []
 
     git_llvm = git()
-    cbc.append(
+    prepare_sources.append(
         git_llvm.clone_step(
             repository="http://root.cern.ch/git/llvm.git",
             branch="cling-patches",
@@ -61,7 +54,7 @@ def build_cling(
         )
     )
     git_clang = git()
-    cbc.append(
+    prepare_sources.append(
         git_clang.clone_step(
             repository="http://root.cern.ch/git/clang.git",
             branch="cling-patches",
@@ -69,7 +62,7 @@ def build_cling(
         )
     )
     git_cling = git(opts=git_cling_opts)
-    cbc.append(
+    prepare_sources.append(
         git_cling.clone_step(
             repository=cling_url,
             branch=cling_branch,
@@ -81,7 +74,7 @@ def build_cling(
     # Comaker detect the projects automatically and builds it.
     if config.build_libcxx:
         git_libcxx = git()
-        cbc.append(
+        prepare_sources.append(
             git_libcxx.clone_step(
                 repository="https://github.com/llvm-mirror/libcxx",
                 branch="release_50",
@@ -89,7 +82,7 @@ def build_cling(
             )
         )
         git_libcxxabi = git()
-        cbc.append(
+        prepare_sources.append(
             git_libcxx.clone_step(
                 repository="https://github.com/llvm-mirror/libcxxabi",
                 branch="release_50",
@@ -97,13 +90,11 @@ def build_cling(
             )
         )
 
+    instr.append(shell(commands=prepare_sources))
+
     for build in config.get_cling_build():
-        cbc += [
-            "",
-            "#/////////////////////////////",
-            "{:<28}".format("#// Build Cling " + build.build_type) + "//",
-            "#/////////////////////////////",
-        ]
+        build_commands: List[str] = []
+        instr.append(add_comment_heading("Build Cling " + build.build_type))
 
         cmake_opts = [
             "-G Ninja",
@@ -126,25 +117,29 @@ def build_cling(
             cmake_opts.append("-DLLVM_ENABLE_LIBCXX=ON")
 
         cm_cling = CMakeBuild(prefix=build.install_path)
-        cbc.append(
+        build_commands.append(
             cm_cling.configure_step(
                 build_directory=build.build_path,
                 directory=config.build_prefix + "/llvm",
                 opts=cmake_opts,
             )
         )
-        cbc.append(cm_cling.build_step(parallel=None, target="install"))
+        build_commands.append(cm_cling.build_step(parallel=None, target="install"))
 
-        cbc.append("PATH_bak=$PATH")
-        cbc.append("PATH=$PATH:" + build.install_path + "/bin")
-        cbc.append("cd " + build.install_path + "/share/cling/Jupyter/kernel")
-        cbc.append(config.get_miniconda_path() + "/bin/pip install -e .")
-        cbc.append("PATH=$PATH_bak")
-        cbc.append("cd - ")
+        build_commands.append("PATH_bak=$PATH")
+        build_commands.append("PATH=$PATH:" + build.install_path + "/bin")
+        build_commands.append(
+            "cd " + build.install_path + "/share/cling/Jupyter/kernel"
+        )
+        build_commands.append(config.get_miniconda_path() + "/bin/pip install -e .")
+        build_commands.append("PATH=$PATH_bak")
+        build_commands.append("cd - ")
+
+        instr.append(shell(commands=build_commands))
 
     if not config.keep_build:
         for build in config.get_cling_build():
             config.paths_to_delete.append(build.build_path)
         config.paths_to_delete.append(config.build_prefix + "/llvm")
 
-    return cbc
+    return instr

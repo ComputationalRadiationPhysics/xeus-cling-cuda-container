@@ -1,0 +1,3 @@
+- fix runtime command in dev_container for singularity build
+ - path to Conda is not set
+ - jupyter notebook is not installed
